@@ -63,6 +63,7 @@ def build_customer_dataset(
         return pd.DataFrame()
 
     work = df_featured.copy()
+
     if 'transaction_date' in work.columns:
         work['transaction_date'] = pd.to_datetime(work['transaction_date'], errors='coerce')
         sort_cols = ['customer_id', 'transaction_date']
@@ -88,12 +89,16 @@ def build_customer_dataset(
 
     if 'product_text' not in latest.columns and 'product_name' in latest.columns:
         latest['product_text'] = latest['product_name']
+
     if 'dominant_category' not in latest.columns and 'category' in latest.columns:
         latest['dominant_category'] = latest['category']
+
     if 'dominant_category' not in latest.columns:
-        latest['dominant_category'] = 'Загальний асортимент'
+        latest['dominant_category'] = 'категорія не визначена'
+
     if 'cluster' not in latest.columns:
         latest['cluster'] = -1
+
     if 'cluster_name' not in latest.columns:
         latest['cluster_name'] = 'Кластер не визначено'
 
@@ -118,6 +123,7 @@ def perform_churn_and_cooling_analysis(
 
     if df_featured.empty:
         return pd.DataFrame()
+
     if 'customer_id' not in df_featured.columns:
         raise ValueError("У featured_data немає колонки 'customer_id'.")
 
@@ -173,6 +179,7 @@ def perform_churn_and_cooling_analysis(
         by=['is_target', 'priority_score', 'Monetary', 'churn_probability'],
         ascending=[False, False, False, False],
     ).reset_index(drop=True)
+
     return queue
 
 
@@ -201,7 +208,10 @@ def predict_single_customer_what_if(
     if 'total_sales' in row:
         row['total_sales'] = float(row['total_sales']) * ticket_multiplier
     if 'promo_response_rate' in row:
-        row['promo_response_rate'] = min(1.0, max(0.0, float(row['promo_response_rate']) + promo_change_pp / 100.0))
+        row['promo_response_rate'] = min(
+            1.0,
+            max(0.0, float(row['promo_response_rate']) + promo_change_pp / 100.0)
+        )
 
     X = pd.DataFrame([row])
     X_ref = pd.DataFrame(columns=features)

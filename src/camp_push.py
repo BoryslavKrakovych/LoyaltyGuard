@@ -11,8 +11,6 @@ DEFAULT_COLUMNS = [
     'cluster_name', 'recommended_action'
 ]
 
-FALLBACK_CATEGORY = 'Загальний асортимент'
-
 
 def _load_feedback_log(feedback_path: str | Path) -> pd.DataFrame:
     path = Path(feedback_path)
@@ -39,19 +37,8 @@ def _apply_feedback_suppression(df: pd.DataFrame, feedback_path: str | Path) -> 
     return result.drop(columns=['favorite_category_norm'])
 
 
-def _normalize_category(value: object) -> str:
-    category = str(value).strip()
-    if not category:
-        return FALLBACK_CATEGORY
-
-    normalized = category.lower()
-    if normalized in {'улюблені товари', 'любимі товари', 'favorite items', 'general assortment'}:
-        return FALLBACK_CATEGORY
-    return category
-
-
 def _build_message_and_channel(row: pd.Series) -> tuple[str, str]:
-    category = _normalize_category(row.get('favorite_category', FALLBACK_CATEGORY))
+    category = str(row['favorite_category']).strip()
     risk_pct = float(pd.to_numeric(row.get('churn_probability', 0.0), errors='coerce') or 0.0) * 100.0
     segment = str(row.get('rfm_segment', ''))
 
@@ -72,11 +59,13 @@ def generate_push_campaign(
     if analysis_df.empty:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
 
-    final = analysis_df.merge(profiles_df, on='customer_id', how='left')
-    final['favorite_category'] = final['favorite_category'].fillna(
-        final.get('dominant_category', pd.Series(FALLBACK_CATEGORY, index=final.index))
-    ).fillna(FALLBACK_CATEGORY)
-    final['favorite_category'] = final['favorite_category'].apply(_normalize_category)
+    if profiles_df.empty:
+        return pd.DataFrame(columns=DEFAULT_COLUMNS)
+
+    final = analysis_df.merge(profiles_df, on='customer_id', how='inner')
+    final['favorite_category'] = final['favorite_category'].astype(str).str.strip()
+    final = final[final['favorite_category'] != ''].copy()
+
     final['cooling_flag'] = final['cooling_flag'].fillna(False).astype(bool)
     final['is_target'] = final['is_target'].fillna(False).astype(bool)
     final['churn_probability'] = pd.to_numeric(final['churn_probability'], errors='coerce').fillna(0.0)
