@@ -2,22 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import joblib
 import pandas as pd
 import streamlit as st
 
 from src.camp_push import append_feedback, filter_campaign_audience, generate_push_campaign
-from src.modeler import train_churn_model, train_kmeans_model, train_word2vec_model
-from src.rfm_cool import perform_churn_and_cooling_analysis, predict_single_customer_what_if
+from core_ml import ChurnModelService, build_customer_clusters, build_rfm_table
+from src.rfm_cool import build_customer_dataset, perform_churn_and_cooling_analysis, predict_single_customer_what_if
 from src.word_vec import build_user_profiles
-from src.xcelerator import (
+from xcelerator import (
     add_base_features,
-    build_customer_dataset,
     build_forward_churn_dataset,
     build_training_matrices,
     load_and_prepare_transactions,
     load_table_file,
     merge_customer_product_stats,
-    save_pipeline_datasets,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -39,6 +38,25 @@ def save_uploaded_file(uploaded_file, suffix: str) -> Path:
     return file_path
 
 
+def save_pipeline_tables(df: pd.DataFrame, customer_df: pd.DataFrame, X: pd.DataFrame, y: pd.Series) -> dict[str, Path]:
+    featured_path = WORK_DIR / 'featured_data.csv'
+    customer_path = WORK_DIR / 'customer_level_data.csv'
+    x_path = WORK_DIR / 'X_train.csv'
+    y_path = WORK_DIR / 'y_train.csv'
+
+    df.to_csv(featured_path, index=False)
+    customer_df.to_csv(customer_path, index=False)
+    X.to_csv(x_path, index=False)
+    y.to_csv(y_path, index=False)
+
+    return {
+        'featured_path': featured_path,
+        'customer_path': customer_path,
+        'x_path': x_path,
+        'y_path': y_path,
+    }
+
+
 def build_pipeline(transactions_path: Path, products_path: Path | None, horizon_days: int, n_clusters: int):
     df, mapping, notes = load_and_prepare_transactions(transactions_path)
 
@@ -52,28 +70,34 @@ def build_pipeline(transactions_path: Path, products_path: Path | None, horizon_
         df = build_forward_churn_dataset(df, horizon_days=horizon_days)
         notes.append(f'churn побудовано автоматично на горизонті {horizon_days} днів')
 
-    customer_df = build_customer_dataset(df)
-    X, y, _, _ = build_training_matrices(df)
+    X, y, groups, _ = build_training_matrices(df)
 
-    saved = save_pipeline_datasets(df, customer_df, X, y, WORK_DIR)
+    churn_service = ChurnModelService(use_xgboost=True)
+    churn_artifacts = churn_service.train(X, y, groups, test_size=0.15)
+    rfm_df = build_rfm_table(df)
+    clusters_df = build_customer_clusters(df, n_clusters=n_clusters)
+    customer_df = build_customer_dataset(df, rfm_df=rfm_df, clusters_df=clusters_df)
 
-    churn_model_path = MODELS_DIR / 'churn_model.joblib'
-    word2vec_model_path = MODELS_DIR / 'word2vec.model'
-    kmeans_model_path = MODELS_DIR / 'kmeans_model.joblib'
+    saved = save_pipeline_tables(df, customer_df, X, y)
+
+    churn_model_path = MODELS_DIR / 'churn_artifacts.joblib'
+    rfm_table_path = MODELS_DIR / 'rfm_table.joblib'
+    customer_clusters_path = MODELS_DIR / 'customer_clusters.joblib'
     rescue_queue_path = WORK_DIR / 'rescue_queue.csv'
     campaign_path = WORK_DIR / 'push_campaign_ready.csv'
     campaign_json_path = WORK_DIR / 'push_campaign_ready.json'
 
-    train_churn_model(saved['x_path'], saved['y_path'], churn_model_path)
-    train_word2vec_model(saved['featured_path'], word2vec_model_path)
-    train_kmeans_model(saved['customer_path'], kmeans_model_path, n_clusters=n_clusters)
+    joblib.dump(churn_artifacts, churn_model_path)
+    joblib.dump(rfm_df, rfm_table_path)
+    joblib.dump(clusters_df, customer_clusters_path)
 
     analysis_df = perform_churn_and_cooling_analysis(
         df,
         model_path=str(churn_model_path),
-        kmeans_model_path=str(kmeans_model_path),
+        rfm_path=str(rfm_table_path),
+        clusters_path=str(customer_clusters_path),
     )
-    profiles_df = build_user_profiles(df, model_path=str(word2vec_model_path))
+    profiles_df = build_user_profiles(df)
     campaign_df = generate_push_campaign(
         analysis_df,
         profiles_df,
@@ -83,6 +107,7 @@ def build_pipeline(transactions_path: Path, products_path: Path | None, horizon_
     analysis_df.to_csv(rescue_queue_path, index=False)
     campaign_df.to_csv(campaign_path, index=False)
     campaign_df.to_json(campaign_json_path, orient='records', force_ascii=False, indent=2)
+
 
     return {
         'featured_df': df,
@@ -94,8 +119,8 @@ def build_pipeline(transactions_path: Path, products_path: Path | None, horizon_
         'paths': {
             **saved,
             'churn_model_path': churn_model_path,
-            'word2vec_model_path': word2vec_model_path,
-            'kmeans_model_path': kmeans_model_path,
+            'rfm_table_path': rfm_table_path,
+            'customer_clusters_path': customer_clusters_path,
             'rescue_queue_path': rescue_queue_path,
             'campaign_path': campaign_path,
             'campaign_json_path': campaign_json_path,
@@ -106,7 +131,7 @@ def build_pipeline(transactions_path: Path, products_path: Path | None, horizon_
 with st.sidebar:
     st.header('Параметри')
     horizon_days = st.number_input('Горизонт прогнозу відтоку, днів', min_value=30, max_value=365, value=90, step=10)
-    n_clusters = st.slider('Кількість кластерів K-means', min_value=1, max_value=10, value=5, step=1)
+    n_clusters = st.slider('Кількість кластерів K-means', min_value=2, max_value=10, value=5, step=1)
 
 transactions_file = st.file_uploader('Файл транзакцій (CSV, XLSX, XLS)', type=['csv', 'xlsx', 'xls'])
 products_file = st.file_uploader('Файл продуктів (опціонально)', type=['csv', 'xlsx', 'xls'])
@@ -123,7 +148,7 @@ if run_button:
         products_path = save_uploaded_file(products_file, 'products') if products_file is not None else None
 
         try:
-            with st.spinner('Обробка даних, навчання моделей і побудова кампанії...'):
+            with st.spinner('Обробка даних, навчання моделей та побудова кампанії...'):
                 st.session_state['pipeline_result'] = build_pipeline(
                     transactions_path=transactions_path,
                     products_path=products_path,
@@ -143,8 +168,6 @@ else:
     customer_df = result['customer_df']
     analysis_df = result['analysis_df']
     campaign_df = result['campaign_df']
-    mapping = result['mapping']
-    notes = result['notes']
     paths = result['paths']
 
     col1, col2, col3, col4 = st.columns(4)
@@ -154,30 +177,8 @@ else:
     col4.metric('У кампанії', len(campaign_df))
 
     tab_rfm, tab_churn, tab_clusters, tab_rescue, tab_what_if, tab_campaign, tab_feedback = st.tabs([
-     'RFM', 'Churn', 'Кластери', 'Черга на порятунок', 'What-if', 'Конструктор кампаній', 'Фідбек'
+        'RFM', 'Churn', 'Групи клієнтів', 'Черга на порятунок', 'What-if', 'Конструктор кампаній', 'Фідбек'
     ])
-
-    # with tab_data:
-    #     # st.subheader('Мапінг колонок')
-    #     # st.json(mapping if mapping else {})
-    #     #
-    #     # st.subheader('Примітки підготовки')
-    #     # if notes:
-    #     #     for note in notes:
-    #     #         st.write('-', note)
-    #     # else:
-    #     #     st.write('Додаткових приміток немає.')
-    #
-    #     st.subheader('Підготовлені транзакції')
-    #     st.dataframe(featured_df.head(100), use_container_width=True)
-    #
-    #     st.download_button(
-    #         'Завантажити featured_data.csv',
-    #         data=paths['featured_path'].read_bytes(),
-    #         file_name='featured_data.csv',
-    #         mime='text/csv',
-    #         use_container_width=True,
-    #     )
 
     with tab_rfm:
         st.subheader('RFM-профіль клієнтів')
@@ -186,7 +187,10 @@ else:
         st.dataframe(customer_df[available_cols].head(100), use_container_width=True)
         if 'rfm_segment' in customer_df.columns:
             st.subheader('Кількість клієнтів за сегментами')
-            st.dataframe(customer_df['rfm_segment'].value_counts(dropna=False).rename_axis('rfm_segment').reset_index(name='customers'), use_container_width=True)
+            st.dataframe(
+                customer_df['rfm_segment'].value_counts(dropna=False).rename_axis('rfm_segment').reset_index(name='customers'),
+                use_container_width=True,
+            )
 
     with tab_churn:
         st.subheader('Прогноз відтоку')
@@ -198,17 +202,20 @@ else:
         available_cols = [col for col in churn_cols if col in analysis_df.columns]
         show_df = analysis_df[available_cols].copy()
         if 'churn_probability' in show_df.columns:
-            show_df['churn_probability'] = (show_df['churn_probability'] * 100).round(1).astype(str) + '%'
+            show_df['churn_probability'] = (pd.to_numeric(show_df['churn_probability'], errors='coerce') * 100).round(1).astype(str) + '%'
         st.dataframe(show_df.head(100), use_container_width=True)
 
     with tab_clusters:
-        st.subheader('K-means сегментація клієнтів')
+        st.subheader('Сегментація клієнтів')
         cluster_cols = ['customer_id', 'cluster', 'cluster_name', 'Monetary', 'Recency', 'Frequency']
         available_cols = [col for col in cluster_cols if col in analysis_df.columns]
         st.dataframe(analysis_df[available_cols].head(100), use_container_width=True)
         if 'cluster_name' in analysis_df.columns:
-            st.subheader('Розподіл за кластерами')
-            st.dataframe(analysis_df['cluster_name'].value_counts(dropna=False).rename_axis('cluster_name').reset_index(name='customers'), use_container_width=True)
+            st.subheader('Розподіл за групами')
+            st.dataframe(
+                analysis_df['cluster_name'].value_counts(dropna=False).rename_axis('cluster_name').reset_index(name='customers'),
+                use_container_width=True,
+            )
 
     with tab_rescue:
         st.subheader('Черга на порятунок')
@@ -238,14 +245,7 @@ else:
         else:
             customer_options = customer_df['customer_id'].astype(str).tolist()
             selected_customer = st.selectbox('Оберіть клієнта', customer_options)
-
-            ticket_change = st.slider(
-                'Зміна середнього чека, %',
-                min_value=-50,
-                max_value=50,
-                value=10,
-                step=5,
-            )
+            ticket_change = st.slider('Зміна середнього чека, %', min_value=-50, max_value=50, value=10, step=5)
 
             base_row = customer_df[customer_df['customer_id'].astype(str) == str(selected_customer)].head(1)
             current_row = analysis_df[analysis_df['customer_id'].astype(str) == str(selected_customer)].head(1)
@@ -286,13 +286,27 @@ else:
             category=selected_category,
             cluster_name=selected_cluster,
         )
-        st.dataframe(filtered_campaign, use_container_width=True)
 
-        csv_bytes = filtered_campaign.to_csv(index=False).encode('utf-8')
+        pretty_campaign = filtered_campaign.rename(columns={
+            'customer_id': 'ID Клієнта',
+            'rfm_segment': 'Сегмент (RFM)',
+            'favorite_category': 'Улюблена Категорія',
+            'churn_probability_pct': 'Ризик (%)',
+            'push_text': 'Рекомендований Меседж',
+            'channel': 'Канал',
+        })
+        campaign_cols = [
+            'ID Клієнта', 'Сегмент (RFM)', 'Улюблена Категорія',
+            'Ризик (%)', 'Рекомендований Меседж', 'Канал'
+        ]
+        available_cols = [col for col in campaign_cols if col in pretty_campaign.columns]
+        st.dataframe(pretty_campaign[available_cols], use_container_width=True)
+
+        csv_bytes = pretty_campaign[available_cols].to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            'Завантажити відфільтровану кампанію CSV',
+            'Зберегти базу для Push-розсилки (CSV)',
             data=csv_bytes,
-            file_name='filtered_campaign.csv',
+            file_name='push_campaign_queue.csv',
             mime='text/csv',
             use_container_width=True,
         )

@@ -13,6 +13,8 @@ TEXT_CANDIDATES = [
     'top_categories',
 ]
 
+FALLBACK_CATEGORY = 'Загальний асортимент'
+
 
 def _tokenize(text: str) -> list[str]:
     return [w for w in re.findall(r'[a-zA-Zа-яА-ЯіІїЇєЄ0-9]+', str(text).lower()) if len(w) > 2]
@@ -37,7 +39,7 @@ def build_user_profiles(df: pd.DataFrame, model_path: str = 'models/word2vec.mod
     text_col = _detect_text_column(df)
     if text_col is None:
         customers = df[['customer_id']].drop_duplicates().copy()
-        customers['favorite_category'] = 'улюблені товари'
+        customers['favorite_category'] = FALLBACK_CATEGORY
         return customers
 
     try:
@@ -55,7 +57,7 @@ def build_user_profiles(df: pd.DataFrame, model_path: str = 'models/word2vec.mod
             words.extend(tokens)
 
         count = Counter(words)
-        return count.most_common(1)[0][0] if count else 'улюблені товари'
+        return count.most_common(1)[0][0] if count else FALLBACK_CATEGORY
 
     profiles = df.groupby('customer_id')[text_col].apply(list).reset_index()
     profiles['favorite_category'] = profiles[text_col].apply(get_favorite_category)

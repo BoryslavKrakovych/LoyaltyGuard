@@ -1,24 +1,24 @@
 from pathlib import Path
 import warnings
 
+import joblib
 import pandas as pd
 
+from src.camp_push import generate_push_campaign
+from core_ml import ChurnModelService, build_customer_clusters, build_rfm_table
 from src.rfm_cool import perform_churn_and_cooling_analysis
 from src.word_vec import build_user_profiles
-from src.camp_push import generate_push_campaign
-from src.modeler import train_churn_model, train_kmeans_model, train_word2vec_model
 
 warnings.filterwarnings('ignore')
 
 BASE_DIR = Path(__file__).resolve().parent
 FEATURED_FILE = BASE_DIR / 'featured_data.csv'
-CUSTOMER_FILE = BASE_DIR / 'customer_level_data.csv'
 X_TRAIN_FILE = BASE_DIR / 'X_train.csv'
 Y_TRAIN_FILE = BASE_DIR / 'y_train.csv'
 MODELS_DIR = BASE_DIR / 'models'
-CHURN_MODEL_FILE = MODELS_DIR / 'churn_model.joblib'
-WORD2VEC_MODEL_FILE = MODELS_DIR / 'word2vec.model'
-KMEANS_MODEL_FILE = MODELS_DIR / 'kmeans_model.joblib'
+CHURN_MODEL_FILE = MODELS_DIR / 'churn_artifacts.joblib'
+RFM_TABLE_FILE = MODELS_DIR / 'rfm_table.joblib'
+CUSTOMER_CLUSTERS_FILE = MODELS_DIR / 'customer_clusters.joblib'
 OUTPUT_FILE = BASE_DIR / 'push_campaign_ready.csv'
 QUEUE_FILE = BASE_DIR / 'rescue_queue.csv'
 JSON_EXPORT_FILE = BASE_DIR / 'campaign_export.json'
@@ -28,17 +28,27 @@ FEEDBACK_FILE = BASE_DIR / 'feedback_log.csv'
 def ensure_models() -> None:
     MODELS_DIR.mkdir(exist_ok=True)
 
-    if not CHURN_MODEL_FILE.exists() and X_TRAIN_FILE.exists() and Y_TRAIN_FILE.exists():
-        print('   -> XGBoost модель не знайдена. Автоматично тренуємо...')
-        train_churn_model(X_TRAIN_FILE, Y_TRAIN_FILE, CHURN_MODEL_FILE)
+    if CHURN_MODEL_FILE.exists() and RFM_TABLE_FILE.exists() and CUSTOMER_CLUSTERS_FILE.exists():
+        return
 
-    if not WORD2VEC_MODEL_FILE.exists() and FEATURED_FILE.exists():
-        print('   -> Word2Vec модель не знайдена. Автоматично тренуємо...')
-        train_word2vec_model(FEATURED_FILE, WORD2VEC_MODEL_FILE)
+    if not FEATURED_FILE.exists() or not X_TRAIN_FILE.exists() or not Y_TRAIN_FILE.exists():
+        print("❌ Помилка: немає featured_data.csv, X_train.csv або y_train.csv.")
+        return
 
-    if not KMEANS_MODEL_FILE.exists() and CUSTOMER_FILE.exists():
-        print('   -> K-means модель не знайдена. Автоматично тренуємо...')
-        train_kmeans_model(CUSTOMER_FILE, KMEANS_MODEL_FILE)
+    print('   -> Артефакти core_ml не знайдені. Автоматично тренуємо через core_ml.py...')
+    X = pd.read_csv(X_TRAIN_FILE)
+    y = pd.read_csv(Y_TRAIN_FILE).squeeze()
+    featured = pd.read_csv(FEATURED_FILE)
+    groups = featured['customer_id'].astype(str)
+
+    churn_service = ChurnModelService(use_xgboost=True)
+    churn_artifacts = churn_service.train(X, y, groups, test_size=0.15)
+    rfm_df = build_rfm_table(featured)
+    clusters_df = build_customer_clusters(featured)
+
+    joblib.dump(churn_artifacts, CHURN_MODEL_FILE)
+    joblib.dump(rfm_df, RFM_TABLE_FILE)
+    joblib.dump(clusters_df, CUSTOMER_CLUSTERS_FILE)
 
 
 def run_daily_loyalty_campaign() -> None:
@@ -58,9 +68,10 @@ def run_daily_loyalty_campaign() -> None:
     analysis_results = perform_churn_and_cooling_analysis(
         df,
         model_path=str(CHURN_MODEL_FILE),
-        kmeans_model_path=str(KMEANS_MODEL_FILE),
+        rfm_path=str(RFM_TABLE_FILE),
+        clusters_path=str(CUSTOMER_CLUSTERS_FILE),
     )
-    user_profiles = build_user_profiles(df, model_path=str(WORD2VEC_MODEL_FILE))
+    user_profiles = build_user_profiles(df)
     final_campaign = generate_push_campaign(
         analysis_results,
         user_profiles,

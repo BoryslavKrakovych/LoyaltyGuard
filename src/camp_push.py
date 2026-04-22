@@ -6,10 +6,12 @@ import pandas as pd
 
 
 DEFAULT_COLUMNS = [
-    'customer_id', 'favorite_category', 'rfm_segment', 'cluster_name',
-    'churn_probability_pct', 'risk_class', 'cooling_flag',
-    'recommended_action', 'push_text'
+    'customer_id', 'rfm_segment', 'favorite_category', 'churn_probability_pct',
+    'push_text', 'channel', 'risk_class', 'cooling_flag',
+    'cluster_name', 'recommended_action'
 ]
+
+FALLBACK_CATEGORY = 'Загальний асортимент'
 
 
 def _load_feedback_log(feedback_path: str | Path) -> pd.DataFrame:
@@ -37,18 +39,27 @@ def _apply_feedback_suppression(df: pd.DataFrame, feedback_path: str | Path) -> 
     return result.drop(columns=['favorite_category_norm'])
 
 
-def _build_push_text(row: pd.Series) -> str:
-    category = str(row['favorite_category']).strip().title()
-    action = str(row['recommended_action'])
-    risk = str(row['risk_class'])
+def _normalize_category(value: object) -> str:
+    category = str(value).strip()
+    if not category:
+        return FALLBACK_CATEGORY
 
-    if risk == 'high':
-        return f"Ми сумуємо за вами. Для категорії '{category}' підготували персональну пропозицію."
-    if bool(row['cooling_flag']):
-        return f"Бачимо спад активності. Перегляньте добірку у категорії '{category}' та поверніться до покупок вигідно."
-    if action == 'Утримання без глибокої знижки':
-        return f"Дякуємо, що ви з нами. Для вас зібрані новинки у категорії '{category}'."
-    return f"Персональна пропозиція для вас: категорія '{category}' може бути особливо цікавою саме зараз."
+    normalized = category.lower()
+    if normalized in {'улюблені товари', 'любимі товари', 'favorite items', 'general assortment'}:
+        return FALLBACK_CATEGORY
+    return category
+
+
+def _build_message_and_channel(row: pd.Series) -> tuple[str, str]:
+    category = _normalize_category(row.get('favorite_category', FALLBACK_CATEGORY))
+    risk_pct = float(pd.to_numeric(row.get('churn_probability', 0.0), errors='coerce') or 0.0) * 100.0
+    segment = str(row.get('rfm_segment', ''))
+
+    if risk_pct > 70 and 'At Risk' in segment:
+        return f'🔥 Повертайтесь! Знижка -20% на {category}', 'Push + SMS'
+    if risk_pct > 50:
+        return f'✨ Ми зібрали для вас новинки: {category}', 'Push'
+    return f'👋 Здається, вам сподобається: {category}', 'Push'
 
 
 def generate_push_campaign(
@@ -63,8 +74,9 @@ def generate_push_campaign(
 
     final = analysis_df.merge(profiles_df, on='customer_id', how='left')
     final['favorite_category'] = final['favorite_category'].fillna(
-        final.get('dominant_category', pd.Series('улюблені товари', index=final.index))
-    ).fillna('улюблені товари')
+        final.get('dominant_category', pd.Series(FALLBACK_CATEGORY, index=final.index))
+    ).fillna(FALLBACK_CATEGORY)
+    final['favorite_category'] = final['favorite_category'].apply(_normalize_category)
     final['cooling_flag'] = final['cooling_flag'].fillna(False).astype(bool)
     final['is_target'] = final['is_target'].fillna(False).astype(bool)
     final['churn_probability'] = pd.to_numeric(final['churn_probability'], errors='coerce').fillna(0.0)
@@ -73,8 +85,10 @@ def generate_push_campaign(
     if targets.empty:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
 
-    targets['push_text'] = targets.apply(_build_push_text, axis=1)
-    targets['churn_probability_pct'] = (targets['churn_probability'] * 100).round(1).astype(str) + '%'
+    messages = targets.apply(_build_message_and_channel, axis=1)
+    targets['push_text'] = [item[0] for item in messages]
+    targets['channel'] = [item[1] for item in messages]
+    targets['churn_probability_pct'] = (targets['churn_probability'] * 100).round(1)
 
     targets = _apply_feedback_suppression(targets, feedback_path)
     targets = targets.sort_values(
@@ -83,9 +97,9 @@ def generate_push_campaign(
     ).reset_index(drop=True)
 
     return targets[[
-        'customer_id', 'favorite_category', 'rfm_segment', 'cluster_name',
-        'churn_probability_pct', 'risk_class', 'cooling_flag',
-        'recommended_action', 'push_text'
+        'customer_id', 'rfm_segment', 'favorite_category', 'churn_probability_pct',
+        'push_text', 'channel', 'risk_class', 'cooling_flag',
+        'cluster_name', 'recommended_action'
     ]]
 
 
