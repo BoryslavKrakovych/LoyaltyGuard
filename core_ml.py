@@ -150,7 +150,7 @@ def build_rfm_table(df: pd.DataFrame) -> pd.DataFrame:
             return 'New / Promising'
         if r == 3 and f in [2, 3] and m in [2, 3, 4]:
             return 'Need Attention'
-        return 'Lost'
+        return 'Regular / Stable'
 
     rfm['rfm_segment'] = rfm.apply(_segment_from_scores, axis=1)
     return rfm

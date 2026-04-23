@@ -157,11 +157,7 @@ def perform_churn_and_cooling_analysis(
     )
 
     customer_df['risk_class'] = customer_df['churn_probability'].apply(_risk_class)
-    customer_df['is_target'] = (
-        customer_df['risk_class'].isin(['high', 'medium']) |
-        customer_df['cooling_flag'] |
-        customer_df['rfm_segment'].isin(['At Risk', 'Lost'])
-    )
+    customer_df['is_target'] = customer_df['churn_probability'] > 0.60
 
     customer_df['recommended_action'] = customer_df.apply(_recommended_action, axis=1)
     customer_df['priority_score'] = customer_df.apply(_build_priority_score, axis=1)
