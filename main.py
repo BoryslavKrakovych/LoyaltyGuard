@@ -10,26 +10,49 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib as _mpl
-_mpl.rcParams.update({
-    'figure.facecolor':  '#13151f',
-    'axes.facecolor':    '#13151f',
-    'axes.edgecolor':    '#2a2e44',
-    'axes.labelcolor':   '#8891aa',
-    'axes.titlecolor':   '#c8d3f5',
-    'text.color':        '#c8d3f5',
-    'xtick.color':       '#4a5580',
-    'ytick.color':       '#4a5580',
-    'grid.color':        '#1e2233',
-    'legend.facecolor':  '#13151f',
-    'legend.edgecolor':  '#2a2e44',
-    'legend.labelcolor': '#8891aa',
-    'figure.edgecolor':  '#13151f',
-    'savefig.facecolor': '#13151f',
-    'axes.prop_cycle':   _mpl.cycler(color=[
-        '#7c9fe6', '#a78bfa', '#34d399', '#fbbf24',
-        '#f87171', '#38bdf8', '#e879f9', '#fb923c',
-    ]),
-})
+def _apply_mpl_theme(dark: bool) -> None:
+    if dark:
+        _mpl.rcParams.update({
+            'figure.facecolor':  '#13151f',
+            'axes.facecolor':    '#13151f',
+            'axes.edgecolor':    '#2a2e44',
+            'axes.labelcolor':   '#8891aa',
+            'axes.titlecolor':   '#c8d3f5',
+            'text.color':        '#c8d3f5',
+            'xtick.color':       '#4a5580',
+            'ytick.color':       '#4a5580',
+            'grid.color':        '#1e2233',
+            'legend.facecolor':  '#13151f',
+            'legend.edgecolor':  '#2a2e44',
+            'legend.labelcolor': '#8891aa',
+            'figure.edgecolor':  '#13151f',
+            'savefig.facecolor': '#13151f',
+            'axes.prop_cycle':   _mpl.cycler(color=[
+                '#7c9fe6', '#a78bfa', '#34d399', '#fbbf24',
+                '#f87171', '#38bdf8', '#e879f9', '#fb923c',
+            ]),
+        })
+    else:
+        _mpl.rcParams.update({
+            'figure.facecolor':  '#ffffff',
+            'axes.facecolor':    '#ffffff',
+            'axes.edgecolor':    '#000000',
+            'axes.labelcolor':   '#000000',
+            'axes.titlecolor':   '#000000',
+            'text.color':        '#000000',
+            'xtick.color':       '#000000',
+            'ytick.color':       '#000000',
+            'grid.color':        '#e5e7eb',
+            'legend.facecolor':  '#ffffff',
+            'legend.edgecolor':  '#000000',
+            'legend.labelcolor': '#000000',
+            'figure.edgecolor':  '#ffffff',
+            'savefig.facecolor': '#ffffff',
+            'axes.prop_cycle':   _mpl.cycler(color=[
+                '#000000', '#333333', '#555555', '#777777',
+                '#999999', '#1f1f1f', '#4a4a4a', '#6b6b6b',
+            ]),
+        })
 
 try:
     from wordcloud import WordCloud
@@ -860,8 +883,8 @@ def render_wordcloud_block(products: pd.DataFrame, featured: pd.DataFrame) -> No
         wordcloud = WordCloud(
             width=1100,
             height=480,
-            background_color='#0b0d14',
-            colormap='cool',
+            background_color='#0b0d14' if st.session_state.get('dark_mode', False) else '#ffffff',
+            colormap='cool' if st.session_state.get('dark_mode', False) else 'Blues',
             max_words=160,
             random_state=42,
             collocations=False,
@@ -1056,7 +1079,48 @@ def read_local_input_file(file_path: str) -> tuple[bytes, str]:
 
 
 def main():
-    st.markdown(
+    # ── Theme toggle ──────────────────────────────────────────────────────────
+    # Базова тема після першого запуску — темна.
+    # Version flag потрібен, щоб після оновлення файлу Streamlit один раз
+    # виставив темну тему навіть якщо у старій сесії залишився світлий стан.
+    if st.session_state.get('_theme_default_version') != 'dark-default-v1':
+        st.session_state['_theme_default_version'] = 'dark-default-v1'
+        st.session_state['dark_mode'] = True
+        st.session_state['theme_toggle'] = True
+
+    if 'dark_mode' not in st.session_state:
+        st.session_state['dark_mode'] = True
+
+    # Якщо toggle уже існує, спочатку синхронізуємо стан теми.
+    # Інакше після кліку текст toggle може показувати стару назву.
+    if 'theme_toggle' in st.session_state:
+        st.session_state['dark_mode'] = bool(st.session_state['theme_toggle'])
+
+    # ВАЖЛИВО: ніякого st.rerun() — зміна теми відбувається на наступному
+    # природному ре-рані (toggle сам тригерить ре-ран).  Це гарантує що
+    # @st.cache_data не інвалідується і модель / дані не перераховуються.
+    with st.sidebar:
+        _theme_cols = st.columns([1, 3])
+        with _theme_cols[0]:
+            st.markdown(
+                '<div style="margin-top:6px;font-size:20px;font-weight:800">'
+                + ('☾' if st.session_state['dark_mode'] else '☀')
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+        with _theme_cols[1]:
+            st.session_state['dark_mode'] = st.toggle(
+                'Темна тема',
+                value=st.session_state['dark_mode'],
+                key='theme_toggle',
+            )
+
+    _dark = st.session_state['dark_mode']
+    _apply_mpl_theme(_dark)
+
+    # ── CSS (light / dark) ────────────────────────────────────────────────────
+    if _dark:
+     _css = (
         '<style>\n'
         '*, *::before, *::after { box-sizing: border-box; }\n'
         '[data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"]{ background:#0b0d14!important; border-bottom:1px solid rgba(255,255,255,.05)!important; }\n'
@@ -1131,15 +1195,343 @@ def main():
         '.dark-table-box tbody td{background:#13151f!important;color:#ffffff!important;border-bottom:1px solid rgba(255,255,255,.07)!important;padding:8px 10px!important;text-align:left!important;white-space:nowrap!important}\n'
         '.dark-table-box tbody tr:nth-child(even) td{background:#0f1219!important}\n'
         '.dark-table-box tbody tr:hover td{background:#1a1e2e!important}\n'
-        '</style>',
-        unsafe_allow_html=True,
-    )
+        '</style>'
+     )
+    else:
+     _css = (
+        '<style>\n'
+        '*,*::before,*::after{box-sizing:border-box!important;color-scheme:light!important}\n'
+        ':root{color-scheme:light!important}\n'
+        'html,body{color-scheme:light!important;background:#ffffff!important}\n'
+        '[data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"]{ background:#ffffff!important; border-bottom:1px solid #d9d9d9!important; }\n'
+        'html,body,.main,.block-container,[data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMainBlockContainer"],[data-testid="stVerticalBlock"],[data-testid="stBottom"],[class*="appview"],[class*="main"]{background-color:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
+        '[data-testid="stBottom"],[data-testid="stBottomBlockContainer"]{background:#ffffff!important;color-scheme:light!important}\n'
+        '[data-testid="stBottom"] *,[data-testid="stBottomBlockContainer"] *{background:transparent!important;color:#000000!important;color-scheme:light!important}\n'
+        '[data-testid="stStatusWidget"]{background:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
+        '[data-testid="stStatusWidget"] *{background:transparent!important;color:#000000!important;fill:#000000!important}\n'
+        'iframe{color-scheme:light!important;background:#ffffff!important}\n'
+        '[data-testid="stArrowVegaLiteChart"] iframe,[data-testid="stVegaLiteChart"] iframe{background:#ffffff!important;color-scheme:light!important}\n'
+        '[data-testid="stBarChart"],[data-testid="stLineChart"],[data-testid="stAreaChart"]{background:#ffffff!important;border-radius:10px!important;padding:8px!important;border:1px solid #d9d9d9!important;color-scheme:light!important}\n'
+        '[data-testid="stBarChart"] *,[data-testid="stLineChart"] *,[data-testid="stAreaChart"] *{background:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
+        'canvas{color-scheme:light!important;background:#ffffff!important}\n'
+        '[data-testid="stSidebar"],#stSidebar,section[data-testid="stSidebar"]{ background-color:#ffffff!important; border-right:1px solid #d9d9d9!important; }\n'
+        '[data-testid="stSidebar"] *, [data-testid="stSidebar"] label{ color:#000000!important; }\n'
+        'h1,h2,h3,h4,h5,h6,p,span,label,div,small,caption,li,button,summary,svg{color:#000000!important;fill:#000000!important}\n'
+        '[data-testid="stTabs"] [role="tablist"]{background:#ffffff!important;border-radius:10px!important;padding:4px!important;border:1px solid #d9d9d9!important}\n'
+        '[data-testid="stTabs"] button[role="tab"]{background:transparent!important;color:#000000!important;border-radius:7px!important;font-weight:600!important;font-size:13px!important;border:none!important}\n'
+        '[data-testid="stTabs"] button[role="tab"]:hover{color:#000000!important;background:#f2f2f2!important}\n'
+        '[data-testid="stTabs"] button[aria-selected="true"]{background:#eeeeee!important;color:#000000!important;font-weight:800!important}\n'
+        '[data-testid="stMetric"]{background:#ffffff!important;border-radius:10px!important;padding:14px 16px!important;border:1px solid #d9d9d9!important;box-shadow:none!important}\n'
+        '[data-testid="stMetricLabel"]{color:#000000!important;font-size:11px!important;text-transform:uppercase;letter-spacing:.8px}\n'
+        '[data-testid="stMetricValue"]{color:#000000!important;font-weight:800!important}\n'
+        '[data-testid="stButton"]>button,[data-testid="stDownloadButton"]>button{background:#ffffff!important;color:#000000!important;border:1px solid #000000!important;border-radius:8px!important;font-weight:700!important;box-shadow:none!important}\n'
+        '[data-testid="stButton"]>button:hover,[data-testid="stDownloadButton"]>button:hover{background:#f2f2f2!important;border-color:#000000!important;color:#000000!important;transform:none!important;box-shadow:none!important}\n'
+        '[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{background:#ffffff!important;border:1px solid #000000!important;border-radius:8px!important;color:#000000!important}\n'
+        '[data-testid="stSelectbox"]>div>div,[data-testid="stSelectbox"] [role="listbox"],[data-testid="stSelectbox"] [role="option"],[data-baseweb="select"]>div,[data-baseweb="popover"] ul,[data-baseweb="popover"],[data-baseweb="menu"]{background:#ffffff!important;border:1px solid #000000!important;border-radius:8px!important;color:#000000!important}\n'
+        '[data-baseweb="option"]:hover,[data-baseweb="option"][aria-selected="true"]{background:#eeeeee!important;color:#000000!important}\n'
+        '[data-testid="stRadio"] label,[data-testid="stRadio"] div{color:#000000!important}\n'
+        '[data-testid="stFileUploader"],[data-testid="stFileUploader"] section,[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"],[data-testid="stFileUploadDropzone"]{background:#ffffff!important;border:1.5px dashed #000000!important;border-radius:10px!important;color:#000000!important}\n'
+        '[data-testid="stFileUploader"] *{color:#000000!important;background:transparent!important}\n'
+        '[data-testid="stAlert"],[data-baseweb="notification"]{border-radius:10px!important;border-left-width:3px!important;background:rgba(255,255,255,.95)!important}\n'
+        '[data-testid="stExpander"]{background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important}\n'
+        '[data-testid="stExpander"] summary{color:#000000!important;font-size:13px!important}\n'
+        '[data-testid="stDataFrame"],[data-testid="stDataFrame"]>div{background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important;overflow:hidden!important}\n'
+        '[data-testid="stDataFrame"],[data-testid="stDataFrame"] *{color:#000000!important;fill:#000000!important}\n'
+        '[data-testid="stDataFrame"] iframe{background:#ffffff!important;color-scheme:light!important}\n'
+        '.dvn-scroller,.gdg-cell,.gdg-header-cell,.glide-data-grid-svg{background:#ffffff!important;color:#000000!important;fill:#000000!important}\n'
+        '[data-testid="stDataFrame"] [role="columnheader"]{background:#eeeeee!important;color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important}\n'
+        '[data-testid="stDataFrame"] [role="gridcell"]{background:#ffffff!important;border-color:rgba(0,0,0,.05)!important}\n'
+        '[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"]{background:#f2f2f2!important}\n'
+        '[data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="gridcell"]{background:#fafafa!important}\n'
+        '[data-testid="stSlider"] [role="slider"]{background:#000000!important;border:2px solid #ffffff!important;box-shadow:none!important;width:22px!important;height:22px!important}\n'
+        '.whatif-scale{display:flex!important;justify-content:space-between!important;align-items:center!important;margin-top:6px!important;padding:0 4px!important}\n'
+        '.whatif-scale span{font-size:12px!important;font-weight:800!important}\n'
+        '.whatif-scale .whatif-min,.whatif-scale .whatif-zero,.whatif-scale .whatif-max,.whatif-scale .whatif-sep{color:#000000!important}\n'
+        '[data-testid="stCaptionContainer"] p{color:#000000!important}\n'
+        '[data-testid="stpyplot"]>div{background:#ffffff!important;border-radius:10px!important;padding:8px!important;border:1px solid #d9d9d9!important}\n'
+        '::-webkit-scrollbar{width:6px;height:6px}\n'
+        '::-webkit-scrollbar-track{background:#ffffff}\n'
+        '::-webkit-scrollbar-thumb{background:#000000;border-radius:3px}\n'
+        '::-webkit-scrollbar-thumb:hover{background:#333333}\n'
+        'hr{border-color:#d9d9d9!important}\n'
+        '[data-testid="stArrowVegaLiteChart"]>div,[data-testid="stVegaLiteChart"]>div{background:#ffffff!important;border-radius:10px!important;border:1px solid #d9d9d9!important;padding:8px!important}\n'
+        '[data-testid="stImage"] img{border-radius:10px!important;border:1px solid #d9d9d9!important}\n'
+        'table,thead,tbody,tr,th,td{background:#ffffff!important;color:#000000!important;border-color:#d9d9d9!important}\n'
+        'th{color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important}\n'
+        'small,caption,[data-testid="stCaptionContainer"] p{color:#000000!important}\n'
+        '[data-testid="stMarkdownContainer"] p,[data-testid="stMarkdownContainer"] li,[data-testid="stMarkdownContainer"] span{color:#000000!important}\n'
+        '[data-testid="stMarkdownContainer"] b,[data-testid="stMarkdownContainer"] strong{color:#000000!important}\n'
+        '.dark-table-box{width:100%!important;overflow:auto!important;background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important;margin:8px 0 16px 0!important;box-shadow:none!important}\n'
+        '.dark-table-box table{width:100%!important;border-collapse:collapse!important;background:#ffffff!important;color:#000000!important;font-size:13px!important}\n'
+        '.dark-table-box thead th{position:sticky!important;top:0!important;z-index:2!important;background:#eeeeee!important;color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important;padding:8px 10px!important;text-align:left!important;white-space:nowrap!important}\n'
+        '.dark-table-box tbody td{background:#ffffff!important;color:#000000!important;border-bottom:1px solid #eeeeee!important;padding:8px 10px!important;text-align:left!important;white-space:nowrap!important}\n'
+        '.dark-table-box tbody tr:nth-child(even) td{background:#fafafa!important}\n'
+        '.dark-table-box tbody tr:hover td{background:#f2f2f2!important}\n'
+        'ul,ol,[data-testid="stMarkdownContainer"] ul,[data-testid="stMarkdownContainer"] ol{list-style:none!important;padding-left:0!important;margin-left:0!important}\n'
+        'ul li,ol li,[data-testid="stMarkdownContainer"] ul li,[data-testid="stMarkdownContainer"] ol li{list-style:none!important;background-image:none!important}\n'
+        'li::marker,[data-testid="stMarkdownContainer"] li::marker{content:""!important;color:transparent!important;font-size:0!important}\n'
+        'li::before,[data-testid="stMarkdownContainer"] li::before{content:none!important;display:none!important}\n'
+        '</style>'
+     )
+    # Додатковий фікс для компонентів Streamlit, які не повністю
+    # перекриваються основним CSS: expander, spinner/status, selectbox popover,
+    # file uploader, alerts. Це прибирає чорні артефакти у світлій темі.
+    _theme_bg = '#13151f' if _dark else '#ffffff'
+    _theme_bg_alt = '#0f1219' if _dark else '#f7f7f7'
+    _theme_header = '#1a1e2e' if _dark else '#eeeeee'
+    _theme_border = 'rgba(255,255,255,.10)' if _dark else '#d9d9d9'
+    _theme_text = '#dde3f5' if _dark else '#000000'
+    _theme_hover = '#1a1e2e' if _dark else '#f2f2f2'
+    _theme_color_scheme = 'dark' if _dark else 'light'
 
+    _theme_fix_css = f"""
+        html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"],
+        [data-testid="stMain"], [data-testid="stMainBlockContainer"],
+        [data-testid="stVerticalBlock"], [data-testid="stBottom"] {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stHeader"], [data-testid="stToolbar"],
+        [data-testid="stDecoration"], [data-testid="stStatusWidget"],
+        [data-testid="stStatusWidget"] div, [data-testid="stStatusWidget"] span,
+        [data-testid="stSpinner"], [data-testid="stSpinner"] div,
+        [data-testid="stSpinner"] span, [data-testid="stSpinner"] p {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            fill: {_theme_text}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stExpander"], [data-testid="stExpander"] details,
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] [data-testid="stMarkdownContainer"],
+        [data-testid="stExpander"] [data-testid="stVerticalBlock"],
+        [data-testid="stExpanderDetails"], [data-testid="stExpanderDetails"] div {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border-color: {_theme_border}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stExpander"] summary p,
+        [data-testid="stExpander"] summary span,
+        [data-testid="stExpander"] svg,
+        [data-testid="stExpander"] label,
+        [data-testid="stExpander"] div,
+        [data-testid="stExpander"] p,
+        [data-testid="stExpander"] span {{
+            color: {_theme_text}!important;
+            fill: {_theme_text}!important;
+        }}
+
+        [data-testid="stSelectbox"], [data-testid="stSelectbox"] div,
+        [data-testid="stSelectbox"] label,
+        [data-baseweb="select"], [data-baseweb="select"] div,
+        [data-baseweb="popover"], [data-baseweb="popover"] div,
+        [data-baseweb="popover"] ul, [data-baseweb="popover"] li,
+        [data-baseweb="menu"], [data-baseweb="menu"] div,
+        [data-baseweb="option"] {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border-color: {_theme_border}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-baseweb="option"]:hover,
+        [data-baseweb="option"][aria-selected="true"] {{
+            background: {_theme_hover}!important;
+            color: {_theme_text}!important;
+        }}
+
+        [data-testid="stFileUploader"], [data-testid="stFileUploader"] section,
+        [data-testid="stFileUploaderDropzone"], [data-testid="stFileUploadDropzone"],
+        [data-testid="stFileUploader"] div,
+        [data-testid="stFileUploader"] small,
+        [data-testid="stFileUploader"] span {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border-color: {_theme_border}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stAlert"], [data-testid="stAlert"] div,
+        [data-baseweb="notification"], [data-baseweb="notification"] div {{
+            background: {_theme_bg_alt}!important;
+            color: {_theme_text}!important;
+            border-color: {_theme_border}!important;
+        }}
+
+        [data-testid="stDataFrame"] iframe,
+        iframe, canvas {{
+            background: {_theme_bg}!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stHeader"] button,
+        [data-testid="stToolbar"] button,
+        [data-testid="stStatusWidget"] button,
+        [data-testid="stHeader"] a,
+        [data-testid="stToolbar"] a,
+        [data-testid="stStatusWidget"] a {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border: 1px solid {_theme_border}!important;
+            border-radius: 8px!important;
+            box-shadow: none!important;
+        }}
+
+        [data-testid="stHeader"] button *,
+        [data-testid="stToolbar"] button *,
+        [data-testid="stStatusWidget"] button *,
+        [data-testid="stHeader"] a *,
+        [data-testid="stToolbar"] a *,
+        [data-testid="stStatusWidget"] a *,
+        [data-testid="stHeader"] svg,
+        [data-testid="stToolbar"] svg,
+        [data-testid="stStatusWidget"] svg {{
+            background: transparent!important;
+            color: {_theme_text}!important;
+            fill: {_theme_text}!important;
+            stroke: {_theme_text}!important;
+        }}
+
+        [data-testid="stImage"],
+        [data-testid="stImage"] > div,
+        [data-testid="stImage"] figure,
+        [data-testid="stpyplot"],
+        [data-testid="stpyplot"] > div,
+        [data-testid="stpyplot"] figure,
+        [data-testid="stArrowVegaLiteChart"],
+        [data-testid="stArrowVegaLiteChart"] > div,
+        [data-testid="stVegaLiteChart"],
+        [data-testid="stVegaLiteChart"] > div {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border: 1px solid {_theme_border}!important;
+            border-radius: 12px!important;
+            padding: 12px!important;
+            color-scheme: {_theme_color_scheme}!important;
+        }}
+
+        [data-testid="stImage"] img,
+        [data-testid="stpyplot"] img,
+        [data-testid="stArrowVegaLiteChart"] canvas,
+        [data-testid="stVegaLiteChart"] canvas {{
+            background: {_theme_bg}!important;
+            border-radius: 10px!important;
+        }}
+
+        table, thead, tbody, tr, th, td {{
+            background: {_theme_bg}!important;
+            color: {_theme_text}!important;
+            border-color: {_theme_border}!important;
+        }}
+
+        th {{
+            background: {_theme_header}!important;
+        }}
+    """
+
+    _css = _css.replace('</style>', _theme_fix_css + '\n</style>')
+
+    st.markdown(_css, unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    /* 1. Повністю прибираємо верхню службову панель Streamlit */
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stStatusWidget"],
+    #MainMenu,
+    footer {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* 2. Прибираємо відступ, який залишався після header */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+
+    /* 3. Забираємо чорні артефакти у верхніх fixed/portal контейнерах Streamlit */
+    div[data-baseweb="popover"],
+    div[data-baseweb="tooltip"],
+    div[data-baseweb="menu"],
+    div[data-baseweb="modal"],
+    div[data-baseweb="drawer"] {
+        background: transparent !important;
+    }
+
+    /* 4. Прибираємо чорне окантування навколо всіх картинок і графіків */
+    [data-testid="stImage"],
+    [data-testid="stImage"] > div,
+    [data-testid="stImage"] figure,
+    [data-testid="stpyplot"],
+    [data-testid="stpyplot"] > div,
+    [data-testid="stpyplot"] figure,
+    [data-testid="stVegaLiteChart"],
+    [data-testid="stVegaLiteChart"] > div,
+    [data-testid="stArrowVegaLiteChart"],
+    [data-testid="stArrowVegaLiteChart"] > div {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+    }
+    
+    /* 5. Прибираємо фон у вкладених div біля картинок/графіків */
+    [data-testid="stImage"] div,
+    [data-testid="stpyplot"] div,
+    [data-testid="stVegaLiteChart"] div,
+    [data-testid="stArrowVegaLiteChart"] div {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* 6. Самі картинки, matplotlib, canvas, iframe без чорного фону */
+    [data-testid="stImage"] img,
+    [data-testid="stpyplot"] img,
+    [data-testid="stVegaLiteChart"] canvas,
+    [data-testid="stArrowVegaLiteChart"] canvas,
+    iframe,
+    canvas {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* 7. Прибираємо кнопку "на повний екран" біля кожного графіка/картинки */
+    [data-testid="StyledFullScreenButton"],
+    button[title="View fullscreen"],
+    button[aria-label="View fullscreen"],
+    button[title="Fullscreen"],
+    button[aria-label="Fullscreen"],
+    [data-testid="stImage"] button,
+    [data-testid="stpyplot"] button,
+    [data-testid="stVegaLiteChart"] button,
+    [data-testid="stArrowVegaLiteChart"] button {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    _title_color = '#000000' if not _dark else '#7c9fe6'
+    _sub_color = '#000000' if not _dark else '#4a5580'
     st.markdown(
-        '<h1 style="font-size:32px;font-weight:900;color:#7c9fe6;letter-spacing:-1px;margin-bottom:2px">'
-        '🛡️ LoyaltyGuard</h1>'
-        '<p style="color:#4a5580;font-size:14px;margin-top:0;margin-bottom:20px">'
-        'Система прогнозу відтоку клієнтів та підтримки рішень для retention-кампаній у рітейлі</p>',
+        f'<h1 style="font-size:32px;font-weight:900;color:{_title_color};letter-spacing:-1px;margin-bottom:2px">'
+        f'🛡️ LoyaltyGuard</h1>'
+        f'<p style="color:{_sub_color};font-size:14px;margin-top:0;margin-bottom:20px">'
+        f'Система прогнозу відтоку клієнтів та підтримки рішень для retention-кампаній у рітейлі</p>',
         unsafe_allow_html=True,
     )
 
@@ -1476,7 +1868,8 @@ def main():
         )
 
         st.markdown('### Розподіл клієнтів за ризиком')
-        st.bar_chart(state['risk_counts'].set_index('risk_class'))
+        _risk_s = state['risk_counts'].set_index('risk_class')['customers']
+        plot_horizontal_counts(_risk_s, 'Розподіл клієнтів за ризиком', 'Кількість клієнтів', 'Клас ризику')
 
         st.markdown('### Статистика та стратегії по кластерах')
 
@@ -1555,32 +1948,43 @@ def main():
                  'Сегментована комунікація відповідно до поведінки.',
                  '#1e1e2e'),
             )
+            if not _dark:
+                _bg = '#ffffff'
             _risk_pct = float(_row['avg_churn_risk_pct'])
-            _risk_color = '#f87171' if _risk_pct > 60 else '#fbbf24' if _risk_pct > 30 else '#34d399'
+            _risk_color = '#000000' if not _dark else '#f87171' if _risk_pct > 60 else '#fbbf24' if _risk_pct > 30 else '#34d399'
+            _card_border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.08)'
+            _muted = '#000000' if not _dark else '#8891aa'
+            _strong = '#000000' if not _dark else '#e8eaf0'
+            _accent = '#000000' if not _dark else '#7c9fe6'
+            _strategy_bg = '#f2f2f2' if not _dark else 'rgba(255,255,255,0.04)'
+            _pill_bg = '#eeeeee' if not _dark else None
+            _pill_high = _pill_med = _pill_low = '#000000'
+            if _dark:
+                _pill_high, _pill_med, _pill_low = '#f87171', '#fbbf24', '#34d399'
             _ticket_html = ''
             if 'avg_ticket_size' in _row and _row['avg_ticket_size'] == _row['avg_ticket_size']:
-                _ticket_html = f'<span style="color:#8891aa;font-size:13px">Сер. чек: <b style="color:#e8eaf0">£{_row["avg_ticket_size"]:.2f}</b></span>'
+                _ticket_html = f'<span style="color:{_muted};font-size:13px">Сер. чек: <b style="color:{_strong}">£{_row["avg_ticket_size"]:.2f}</b></span>'
             _rfm_html = ''
             if 'top_rfm_segment' in _row:
-                _rfm_html = f'<span style="color:#8891aa;font-size:13px">Топ RFM: <b style="color:#a78bfa">{_row["top_rfm_segment"]}</b></span>'
+                _rfm_html = f'<span style="color:{_muted};font-size:13px">Топ RFM: <b style="color:{_strong}">{_row["top_rfm_segment"]}</b></span>'
 
             st.markdown(
-                f'<div style="background:{_bg};border-radius:12px;padding:16px 20px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.08)">'
+                f'<div style="background:{_bg};border-radius:10px;padding:16px 20px;margin-bottom:12px;border:1px solid {_card_border}">'
                 f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">'
-                f'<div><span style="font-size:18px;font-weight:700;color:#e8eaf0">{_cname}</span>'
-                f'<span style="margin-left:12px;font-size:13px;color:#8891aa">{int(_row["customers"])} клієнтів</span></div>'
+                f'<div><span style="font-size:18px;font-weight:700;color:{_strong}">{_cname}</span>'
+                f'<span style="margin-left:12px;font-size:13px;color:{_muted}">{int(_row["customers"])} клієнтів</span></div>'
                 f'<div style="display:flex;gap:10px;flex-wrap:wrap">'
-                f'<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:3px 10px;border-radius:20px;font-size:12px">High: {int(_row["high_risk_count"])}</span>'
-                f'<span style="background:rgba(251,191,36,0.15);color:#fbbf24;padding:3px 10px;border-radius:20px;font-size:12px">Med: {int(_row["medium_risk_count"])}</span>'
-                f'<span style="background:rgba(52,211,153,0.15);color:#34d399;padding:3px 10px;border-radius:20px;font-size:12px">Low: {int(_row["low_risk_count"])}</span>'
+                f'<span style="background:{_pill_bg or "rgba(248,113,113,0.15)"};color:{_pill_high};padding:3px 10px;border-radius:20px;font-size:12px">High: {int(_row["high_risk_count"])}</span>'
+                f'<span style="background:{_pill_bg or "rgba(251,191,36,0.15)"};color:{_pill_med};padding:3px 10px;border-radius:20px;font-size:12px">Med: {int(_row["medium_risk_count"])}</span>'
+                f'<span style="background:{_pill_bg or "rgba(52,211,153,0.15)"};color:{_pill_low};padding:3px 10px;border-radius:20px;font-size:12px">Low: {int(_row["low_risk_count"])}</span>'
                 f'</div></div>'
                 f'<div style="display:flex;gap:20px;margin-top:10px;flex-wrap:wrap">'
-                f'<span style="color:#8891aa;font-size:13px">Сер. ризик: <b style="color:{_risk_color}">{_risk_pct:.1f}%</b></span>'
+                f'<span style="color:{_muted};font-size:13px">Сер. ризик: <b style="color:{_risk_color}">{_risk_pct:.1f}%</b></span>'
                 f'{_ticket_html}{_rfm_html}'
                 f'</div>'
-                f'<div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:8px">'
-                f'<span style="font-weight:600;color:#7c9fe6">{_strat_title}</span>'
-                f'<p style="margin:4px 0 0;color:#aab2cc;font-size:13px;line-height:1.55">{_strat_text}</p>'
+                f'<div style="margin-top:12px;padding:10px 14px;background:{_strategy_bg};border-radius:8px">'
+                f'<span style="font-weight:600;color:{_accent}">{_strat_title}</span>'
+                f'<p style="margin:4px 0 0;color:{_muted};font-size:13px;line-height:1.55">{_strat_text}</p>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
@@ -1701,13 +2105,17 @@ def main():
 
         def _stat_card(col, label, value, hint='', color='#7c9fe6'):
             with col:
+                _bg = '#ffffff' if not _dark else '#1a1e2e'
+                _border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
+                _text = '#000000' if not _dark else '#4a5580'
+                _value = '#000000' if not _dark else color
                 st.markdown(
-                    f'<div style="background:#1a1e2e;border-radius:12px;padding:16px 14px;'
-                    f'text-align:center;border:1px solid rgba(255,255,255,0.07);margin-bottom:8px">'
+                    f'<div style="background:{_bg};border-radius:10px;padding:16px 14px;'
+                    f'text-align:center;border:1px solid {_border};margin-bottom:8px">'
                     f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;'
-                    f'color:#4a5580;margin-bottom:6px">{label}</div>'
-                    f'<div style="font-size:38px;font-weight:800;color:{color};line-height:1.1">{value}</div>'
-                    f'<div style="font-size:11px;color:#4a5580;margin-top:4px">{hint}</div>'
+                    f'color:{_text};margin-bottom:6px">{label}</div>'
+                    f'<div style="font-size:38px;font-weight:800;color:{_value};line-height:1.1">{value}</div>'
+                    f'<div style="font-size:11px;color:{_text};margin-top:4px">{hint}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -1757,13 +2165,17 @@ def main():
                 dark_table(_cm, hide_index=False, height=260)
                 _tn = int(_cm.iloc[0, 0]); _fp = int(_cm.iloc[0, 1])
                 _fn = int(_cm.iloc[1, 0]); _tp = int(_cm.iloc[1, 1])
+                _cm_bg = '#ffffff' if not _dark else '#1a1e2e'
+                _cm_text = '#000000' if not _dark else '#8891aa'
+                _cm_border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
+                _cm_mark = '#000000' if not _dark else None
                 st.markdown(
-                    f'<div style="background:#1a1e2e;border-radius:10px;padding:10px 14px;'
-                    f'font-size:13px;color:#8891aa;margin-top:8px">'
-                    f'<b style="color:#34d399">TP</b> {_tp}  '
-                    f'<b style="color:#34d399">TN</b> {_tn}  '
-                    f'<b style="color:#f87171">FP</b> {_fp}  '
-                    f'<b style="color:#fbbf24">FN</b> {_fn}'
+                    f'<div style="background:{_cm_bg};border-radius:10px;padding:10px 14px;'
+                    f'font-size:13px;color:{_cm_text};margin-top:8px;border:1px solid {_cm_border}">'
+                    f'<b style="color:{_cm_mark or "#34d399"}">TP</b> {_tp}  '
+                    f'<b style="color:{_cm_mark or "#34d399"}">TN</b> {_tn}  '
+                    f'<b style="color:{_cm_mark or "#f87171"}">FP</b> {_fp}  '
+                    f'<b style="color:{_cm_mark or "#fbbf24"}">FN</b> {_fn}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -1772,7 +2184,8 @@ def main():
             dark_table(feature_importance.head(20), hide_index=True, height=420)
 
         st.markdown('### 📋 RFM-сегменти')
-        st.bar_chart(state['rfm_counts'].set_index('rfm_segment'))
+        _rfm_s = state['rfm_counts'].set_index('rfm_segment')['customers']
+        plot_horizontal_counts(_rfm_s, 'RFM-сегменти', 'Кількість клієнтів', 'Сегмент')
 
         st.markdown('### RFM-таблиця')
         dark_table(rfm.head(50), hide_index=True, height=420)
@@ -1792,7 +2205,8 @@ def main():
         if len(chart_df) == 0:
             chart_df = state['category_counts'].copy()
 
-        st.bar_chart(chart_df.head(10).set_index('category'))
+        _cat_s = chart_df.head(10).set_index('category')['customers']
+        plot_horizontal_counts(_cat_s, 'Топ категорій', 'Кількість клієнтів', 'Категорія')
 
         st.markdown('### Узгоджений профіль категорій клієнтів')
         dark_table(category_table.head(100), hide_index=True, height=420)
@@ -1990,11 +2404,16 @@ def main():
 
         def _big_metric(col, label, value, sub=''):
             with col:
+                _bg   = '#ffffff' if not _dark else '#1a1e2e'
+                _bdr  = '1px solid #d9d9d9' if not _dark else '1px solid rgba(255,255,255,0.07)'
+                _lclr = '#000000' if not _dark else '#8891aa'
+                _vclr = '#000000' if not _dark else '#7c9fe6'
+                _sclr = '#000000' if not _dark else '#4a5580'
                 st.markdown(
-                    f'<div style="background:#1a1e2e;border-radius:12px;padding:18px 16px;text-align:center;border:1px solid rgba(255,255,255,0.07)">'
-                    f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8891aa;margin-bottom:4px">{label}</div>'
-                    f'<div style="font-size:40px;font-weight:800;color:#7c9fe6;line-height:1">{value}</div>'
-                    f'<div style="font-size:12px;color:#4a5580;margin-top:4px">{sub}</div>'
+                    f'<div style="background:{_bg};border-radius:10px;padding:18px 16px;text-align:center;border:{_bdr};box-shadow:none">'
+                    f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:{_lclr};margin-bottom:4px">{label}</div>'
+                    f'<div style="font-size:40px;font-weight:800;color:{_vclr};line-height:1">{value}</div>'
+                    f'<div style="font-size:12px;color:{_sclr};margin-top:4px">{sub}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -2044,12 +2463,17 @@ def main():
                 _fp = int(_cm.iloc[0, 1])
                 _fn = int(_cm.iloc[1, 0])
                 _tp = int(_cm.iloc[1, 1])
+                _cm_bg  = '#ffffff' if not _dark else '#1a1e2e'
+                _cm_txt = '#000000' if not _dark else '#8891aa'
+                _tp_c   = '#000000' if not _dark else '#e8eaf0'
+                _err_c  = '#000000' if not _dark else '#dc2626'
+                _warn_c = '#000000' if not _dark else '#d97706'
                 st.markdown(
-                    f'<div style="margin-top:12px;background:#1a1e2e;border-radius:10px;padding:12px 16px;font-size:13px;color:#8891aa">'
-                    f'<b style="color:#e8eaf0">TP</b> {_tp} &nbsp; '
-                    f'<b style="color:#e8eaf0">TN</b> {_tn} &nbsp; '
-                    f'<b style="color:#f87171">FP</b> {_fp} &nbsp; '
-                    f'<b style="color:#fbbf24">FN</b> {_fn}'
+                    f'<div style="margin-top:12px;background:{_cm_bg};border-radius:10px;padding:12px 16px;font-size:13px;color:{_cm_txt};border:1px solid {"#d9d9d9" if not _dark else "rgba(255,255,255,.07)"}">'
+                    f'<b style="color:{_tp_c}">TP</b> {_tp} &nbsp; '
+                    f'<b style="color:{_tp_c}">TN</b> {_tn} &nbsp; '
+                    f'<b style="color:{_err_c}">FP</b> {_fp} &nbsp; '
+                    f'<b style="color:{_warn_c}">FN</b> {_fn}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -2062,7 +2486,7 @@ def main():
         if not _fi.empty:
             import matplotlib.pyplot as _plt
             _fig, _ax = _plt.subplots(figsize=(8, max(4, len(_fi) * 0.32)))
-            _colors = ['#7c9fe6' if i < 5 else '#4a5580' for i in range(len(_fi))]
+            _colors = ['#000000' if i < 5 else '#777777' for i in range(len(_fi))] if not _dark else ['#7c9fe6' if i < 5 else '#4a5580' for i in range(len(_fi))]
             _ax.barh(_fi['feature'][::-1], _fi['importance'][::-1], color=_colors[::-1])
             _ax.set_xlabel('Importance')
             _ax.set_title('Feature importances (top 20)', fontsize=11)
@@ -2070,20 +2494,24 @@ def main():
             _fig.tight_layout()
             st.pyplot(_fig)
 
-        # ── Thresholds info ───────────────────────────────────────────────────
-        st.markdown('#### Пороги класифікації ризику')
         from src.config import LOW_RISK_MAX, MEDIUM_RISK_MAX
+        _r_val_c = '#000000' if not _dark else '#e8eaf0'
+        _risk_label_c = '#000000' if not _dark else None
+        _low_bg  = '#ffffff' if not _dark else '#1a3a1a'
+        _mid_bg  = '#ffffff' if not _dark else '#2a2a1a'
+        _hi_bg   = '#ffffff' if not _dark else '#3a1a1a'
+        _risk_border = '#d9d9d9' if not _dark else 'transparent'
         st.markdown(
             f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">'
-            f'<div style="background:#1a3a1a;border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:#34d399;font-size:13px;font-weight:700">Low risk</div>'
-            f'<div style="color:#e8eaf0;font-size:18px;font-weight:800">≤ {LOW_RISK_MAX*100:.0f}%</div></div>'
-            f'<div style="background:#2a2a1a;border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:#fbbf24;font-size:13px;font-weight:700">Medium risk</div>'
-            f'<div style="color:#e8eaf0;font-size:18px;font-weight:800">{LOW_RISK_MAX*100:.0f}–{MEDIUM_RISK_MAX*100:.0f}%</div></div>'
-            f'<div style="background:#3a1a1a;border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:#f87171;font-size:13px;font-weight:700">High risk</div>'
-            f'<div style="color:#e8eaf0;font-size:18px;font-weight:800">&gt; {MEDIUM_RISK_MAX*100:.0f}%</div></div>'
+            f'<div style="background:{_low_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+            f'<div style="color:{_risk_label_c or "#059669"};font-size:13px;font-weight:700">Low risk</div>'
+            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">≤ {LOW_RISK_MAX*100:.0f}%</div></div>'
+            f'<div style="background:{_mid_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+            f'<div style="color:{_risk_label_c or "#d97706"};font-size:13px;font-weight:700">Medium risk</div>'
+            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">{LOW_RISK_MAX*100:.0f}–{MEDIUM_RISK_MAX*100:.0f}%</div></div>'
+            f'<div style="background:{_hi_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+            f'<div style="color:{_risk_label_c or "#dc2626"};font-size:13px;font-weight:700">High risk</div>'
+            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">&gt; {MEDIUM_RISK_MAX*100:.0f}%</div></div>'
             f'</div>',
             unsafe_allow_html=True,
         )
