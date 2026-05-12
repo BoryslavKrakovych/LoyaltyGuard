@@ -2006,6 +2006,21 @@ def main():
             try:
                 _fb_df = load_table_bytes(feedback_file.getvalue(), feedback_file.name)
 
+                # ── Auto-detect customer_id column by common aliases ─────────
+                _FB_CID_ALIASES = {
+                    'customer_id', 'customerid', 'customer id',
+                    'user_id', 'userid', 'user id',
+                    'client_id', 'clientid', 'client id',
+                    'cust_id', 'custid',
+                }
+                _fb_cid_col = None
+                for _col in _fb_df.columns:
+                    if _col.strip().lower() in _FB_CID_ALIASES:
+                        _fb_cid_col = _col
+                        break
+                if _fb_cid_col and _fb_cid_col != 'customer_id':
+                    _fb_df = _fb_df.rename(columns={_fb_cid_col: 'customer_id'})
+
                 _fb_n_rows = len(_fb_df)
                 _fb_n_cols = len(_fb_df.columns)
 
@@ -2017,10 +2032,14 @@ def main():
                     st.metric('Колонок', _fb_n_cols)
                 with _fc3:
                     _has_cid = 'customer_id' in _fb_df.columns
-                    st.metric('customer_id', '✅ є' if _has_cid else '❌ немає')
+                    _cid_label = (
+                        f'✅ є ({_fb_cid_col})' if (_has_cid and _fb_cid_col and _fb_cid_col != 'customer_id')
+                        else ('✅ є' if _has_cid else '❌ немає')
+                    )
+                    st.metric('customer_id', _cid_label)
                 with _fc4:
                     if _has_cid:
-                        _match_n = _fb_df['customer_id'].astype(str).isin(
+                        _match_n = _fb_df['customer_id'].astype(str).str.strip().isin(
                             latest_customers['customer_id'].astype(str)
                         ).sum()
                         st.metric('Збіг з клієнтами', f'{_match_n:,}')
@@ -2031,13 +2050,31 @@ def main():
                 with st.expander('🔍 Перегляд файлу feedback'):
                     dark_table(_fb_df.head(50), hide_index=True, height=360)
 
-                if 'customer_id' in _fb_df.columns:
+                if not _has_cid:
+                    st.warning(
+                        'У feedback-файлі не знайдено колонки з ID клієнта. '
+                        f'Знайдені колонки: {list(_fb_df.columns)}. '
+                        'Очікується одна з: customer_id, user_id, User ID тощо.'
+                    )
+                    dark_table(_fb_df.head(100), hide_index=True, height=420)
+                else:
                     # Detect status/response column automatically
+                    _NON_STATUS_COLS = {
+                        'customer_id', 'customerid', 'id',
+                        'suggested item', 'suggested_item', 'item', 'product',
+                    }
                     _status_candidates = [
                         c for c in _fb_df.columns
-                        if c.lower() not in {'customer_id', 'customerid', 'id'}
+                        if c.lower() not in _NON_STATUS_COLS
                         and _fb_df[c].nunique() <= 20
                     ]
+
+                    # Detect item/product column (e.g. "Suggested Item")
+                    _ITEM_ALIASES = {'suggested item', 'suggested_item', 'item', 'product', 'product_name', 'товар'}
+                    _fb_item_col = next(
+                        (c for c in _fb_df.columns if c.strip().lower() in _ITEM_ALIASES),
+                        None,
+                    )
 
                     _status_col = None
                     if _status_candidates:
@@ -2058,7 +2095,11 @@ def main():
                     _merged = _fb_clean.merge(_lc_copy, on='customer_id', how='inner')
 
                     if len(_merged) == 0:
-                        st.info('Жодного перетину між feedback і предікціями. Перевірте формат customer_id.')
+                        st.info(
+                            'Жодного перетину між feedback і предікціями. '
+                            f'ID з feedback (приклади): {_fb_clean["customer_id"].head(5).tolist()}. '
+                            f'ID в моделі (приклади): {_lc_copy["customer_id"].head(5).tolist()}.'
+                        )
                     else:
                         st.markdown(f'**Перетин: {len(_merged):,} клієнтів**')
 
@@ -2083,12 +2124,36 @@ def main():
                             _avg_risk.columns = [_status_col, 'Сер. ризик, %']
                             dark_table(_avg_risk, hide_index=True, height=320)
 
-                        st.markdown('#### Об’єднана таблиця (feedback + предікції)')
+                            # ── Item-level analysis (if Suggested Item present) ──
+                            if _fb_item_col and _fb_item_col in _merged.columns:
+                                st.markdown(f'#### Реакція за товаром (`{_fb_item_col}`)')
+                                _item_pivot = (
+                                    _merged
+                                    .groupby([_fb_item_col, _status_col])
+                                    .size()
+                                    .reset_index(name='клієнтів')
+                                    .sort_values('клієнтів', ascending=False)
+                                )
+                                dark_table(_item_pivot.head(50), hide_index=True, height=360)
+
+                                _negative_reactions = {'not interested', 'no action', 'unsubscribed', 'ignored'}
+                                _positive = _merged[
+                                    ~_merged[_status_col].str.lower().isin(_negative_reactions)
+                                ]
+                                if len(_positive) > 0:
+                                    _top_items = (
+                                        _positive[_fb_item_col]
+                                        .value_counts()
+                                        .head(10)
+                                        .reset_index()
+                                    )
+                                    _top_items.columns = ['Товар', 'Позитивних реакцій']
+                                    st.markdown('#### ТОП-10 товарів з позитивними реакціями')
+                                    dark_table(_top_items, hide_index=True, height=320)
+
+                        st.markdown('#### Об\u2019єднана таблиця (feedback + предікції)')
                         dark_table(_merged.head(100), hide_index=True, height=420)
                         download_dataframe_button(_merged, 'feedback_enriched.csv', 'Завантажити feedback + предікції')
-                else:
-                    st.warning('У feedback-файлі немає колонки customer_id — показую тільки вміст.')
-                    dark_table(_fb_df.head(100), hide_index=True, height=420)
 
             except Exception as _fb_error:
                 st.error(f'Не вдалося зчитати feedback-файл: {_fb_error}')
