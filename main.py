@@ -563,22 +563,44 @@ def build_customer_category_table(latest_df: pd.DataFrame, auto_profile: pd.Data
 def auto_recommended_action(row: pd.Series) -> str:
     category_name = format_category_output(row.get('campaign_category', row.get('dominant_category_display', '')))
     risk = clean_text_value(row.get('risk_class', ''), '')
+    discount = auto_discount_pct(row)
 
     if risk == 'High':
-        return f'Точкова знижка + персональна рекомендація по категорії {category_name}'
+        return f'Точкова знижка {discount}% + персональна рекомендація по категорії {category_name}'
     if risk == 'Medium':
-        return f'Нагадування + добірка товарів по категорії {category_name}'
-    return f'Контентна комунікація по категорії {category_name}'
+        return f'Знижка {discount}% + нагадування і добірка товарів по категорії {category_name}'
+    return f'Знижка {discount}% + контентна комунікація по категорії {category_name}'
+
+
+def _risk_percent(row: pd.Series) -> float:
+    """Повертає ризик клієнта у відсотках (0–100). Якщо значення немає — 0.0."""
+    try:
+        val = float(row.get('churn_probability_percent', 0) or 0)
+    except (TypeError, ValueError):
+        val = 0.0
+    return val
 
 
 def auto_recommended_channel(row: pd.Series) -> str:
-    risk = clean_text_value(row.get('risk_class', ''), '')
+    risk_pct = _risk_percent(row)
 
-    if risk == 'High':
-        return 'SMS + e-mail'
-    if risk == 'Medium':
-        return 'Push + e-mail'
-    return 'App'
+    if risk_pct >= 70:
+        return 'Push + SMS'
+    # 60–69%, 30–59% та <30% — всі через SMS
+    return 'SMS'
+
+
+def auto_discount_pct(row: pd.Series) -> int:
+    """Розмір знижки (%) залежно від ризику відтоку у відсотках."""
+    risk_pct = _risk_percent(row)
+
+    if risk_pct >= 70:
+        return 25
+    if risk_pct >= 60:
+        return 20
+    if risk_pct >= 30:
+        return 15
+    return 5
 
 
 def build_manual_action_text(offer_type: str, category_name: str) -> str:
@@ -647,12 +669,12 @@ def build_campaign_table(
         'campaign_name',
         'customer_id',
         'churn_probability_percent',
+        'recommended_channel',
         'risk_class',
         'rfm_segment',
         'customer_cluster_name',
         'campaign_category',
         'recommended_action',
-        'recommended_channel',
         'top_categories_display',
     ]
     columns = [col for col in columns if col in work.columns]
@@ -2470,7 +2492,6 @@ def main():
                 'best_category',
                 'top_categories_ranked',
                 'response_prob_pct',
-                'discount_pct',
                 'recommended_message',
             ]
             fb_cols = [col for col in fb_cols if col in audience.columns]
@@ -2582,8 +2603,12 @@ def main():
                 metric_col3, 'Сер. ризик після, %', effect_summary['avg_risk_after_pct'].iloc[0],
             )
 
-            st.markdown('### Підсумок кампанії')
-            dark_table(effect_summary, hide_index=True, height=260)
+            # st.markdown('### Підсумок кампанії')
+            # effect_summary_display = effect_summary.drop(
+            #     columns=['avg_reduction_pp', 'customers_improved'],
+            #     errors='ignore',
+            # )
+            # dark_table(effect_summary_display, hide_index=True, height=260)
 
             st.markdown('### Фінальна таблиця кампанії')
             dark_table(final_campaign.head(audience_limit), hide_index=True, height=460)
