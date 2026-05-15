@@ -18,18 +18,18 @@ COLUMN_ALIASES = {
         'client_id', 'client id',
         'userid', 'user_id',
         'cust_id', 'custid',
-        'customer'
+        'customer', 'client', 'user', 'buyer', 'покупець', 'клієнт', 'клиент'
     ],
     'transaction_date': [
         'transaction_date', 'transaction date', 'transactiondate',
         'invoice_date', 'invoice date', 'invoicedate',
         'order_date', 'order date', 'orderdate',
         'purchase_date', 'purchase date', 'purchasedate',
-        'date', 'datetime'
+        'date', 'datetime', 'timestamp', 'created_at', 'created at', 'дата', 'дата транзакції', 'дата покупки', 'дата продажу'
     ],
     'transaction_id': [
         'transaction_id', 'transaction id', 'transactionid',
-        'invoice', 'invoice_no', 'invoice no', 'invoiceno',
+        'invoice', 'invoice_no', 'invoice no', 'invoiceno', 'receipt', 'receipt_no', 'check_id', 'чек', 'номер чеку',
         'order_id', 'order id', 'orderid',
         'bill_no', 'bill no',
         'receipt_id', 'receipt id'
@@ -42,9 +42,9 @@ COLUMN_ALIASES = {
     ],
     'product_name': [
         'product_name', 'product name', 'productname',
-        'description',
+        'description', 'desc',
         'item_name', 'item name',
-        'name', 'title'
+        'name', 'title', 'товар', 'назва товару', 'product description'
     ],
     'quantity': [
         'quantity', 'qty', 'items', 'units', 'count'
@@ -53,7 +53,7 @@ COLUMN_ALIASES = {
         'price',
         'unit_price', 'unit price', 'unitprice',
         'item_price', 'item price',
-        'amount'
+        'amount', 'sum', 'total', 'value', 'revenue', 'sales', 'сума', 'вартість'
     ],
     'country': [
         'country', 'region'

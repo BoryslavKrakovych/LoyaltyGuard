@@ -10,6 +10,18 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib as _mpl
+CHART_COLORS = [
+    '#2563eb',  # blue
+    '#7c3aed',  # violet
+    '#059669',  # green
+    '#d97706',  # orange
+    '#dc2626',  # red
+    '#0891b2',  # cyan
+    '#c026d3',  # pink
+    '#ea580c',  # deep orange
+]
+
+
 def _apply_mpl_theme(dark: bool) -> None:
     if dark:
         _mpl.rcParams.update({
@@ -27,31 +39,36 @@ def _apply_mpl_theme(dark: bool) -> None:
             'legend.labelcolor': '#8891aa',
             'figure.edgecolor':  '#13151f',
             'savefig.facecolor': '#13151f',
-            'axes.prop_cycle':   _mpl.cycler(color=[
-                '#7c9fe6', '#a78bfa', '#34d399', '#fbbf24',
-                '#f87171', '#38bdf8', '#e879f9', '#fb923c',
+            'savefig.edgecolor': '#13151f',
+            'axes.prop_cycle': _mpl.cycler(color=[
+                '#7c9fe6',
+                '#a78bfa',
+                '#34d399',
+                '#fbbf24',
+                '#f87171',
+                '#38bdf8',
+                '#e879f9',
+                '#fb923c',
             ]),
         })
     else:
         _mpl.rcParams.update({
             'figure.facecolor':  '#ffffff',
             'axes.facecolor':    '#ffffff',
-            'axes.edgecolor':    '#000000',
-            'axes.labelcolor':   '#000000',
-            'axes.titlecolor':   '#000000',
-            'text.color':        '#000000',
-            'xtick.color':       '#000000',
-            'ytick.color':       '#000000',
+            'axes.edgecolor':    '#d1d5db',
+            'axes.labelcolor':   '#111827',
+            'axes.titlecolor':   '#111827',
+            'text.color':        '#111827',
+            'xtick.color':       '#374151',
+            'ytick.color':       '#374151',
             'grid.color':        '#e5e7eb',
             'legend.facecolor':  '#ffffff',
-            'legend.edgecolor':  '#000000',
-            'legend.labelcolor': '#000000',
+            'legend.edgecolor':  '#d1d5db',
+            'legend.labelcolor': '#111827',
             'figure.edgecolor':  '#ffffff',
             'savefig.facecolor': '#ffffff',
-            'axes.prop_cycle':   _mpl.cycler(color=[
-                '#000000', '#333333', '#555555', '#777777',
-                '#999999', '#1f1f1f', '#4a4a4a', '#6b6b6b',
-            ]),
+            'savefig.edgecolor': '#ffffff',
+            'axes.prop_cycle': _mpl.cycler(color=CHART_COLORS),
         })
 
 try:
@@ -62,7 +79,7 @@ except Exception:
     WORDCLOUD_AVAILABLE = False
 
 from src.churn_model import ChurnModelService, attach_predictions, feature_importance_table
-from src.clustering import build_customer_clusters
+from src.clustering import build_customer_clusters, cluster_strategy_text
 from src.config import SAVED_CHURN_MODEL_PATH
 from src.data_loader import (
     CANONICAL_TRANSACTION_COLUMNS,
@@ -86,6 +103,17 @@ from src.product_analytics import (
     train_word2vec,
     cluster_products,
     semantic_cluster_summary,
+)
+from src.categorization import (
+    categorize_product,
+    categorize_dataframe,
+    FALLBACK_CATEGORY,
+)
+from src.feedback_model import (
+    autodetect_feedback_columns,
+    prepare_feedback_training_set,
+    FeedbackResponseService,
+    attach_feedback_recommendations,
 )
 
 st.set_page_config(page_title='LoyaltyGuard', page_icon='🛡️', layout='wide', initial_sidebar_state='expanded')
@@ -310,8 +338,9 @@ def build_products_for_categories(file_bytes: bytes, file_name: str) -> pd.DataF
         + products['product_description'].fillna('').astype(str)
     ).str.strip()
 
-    products['category'] = text_series.apply(infer_category_from_text)
-    products['category'] = products['category'].apply(format_category_output)
+    category_results = text_series.apply(categorize_product)
+    products['category'] = category_results.apply(lambda result: result[0])
+    products['category_source'] = category_results.apply(lambda result: result[1])
 
     keep_cols = ['customer_id', 'product_id', 'product_name', 'product_description', 'category']
     return products[keep_cols].drop_duplicates().reset_index(drop=True)
@@ -369,8 +398,9 @@ def build_products_for_categories_from_dataframe(
         + products['product_description'].fillna('').astype(str)
     ).str.strip()
 
-    products['category'] = text_series.apply(infer_category_from_text)
-    products['category'] = products['category'].apply(format_category_output)
+    category_results = text_series.apply(categorize_product)
+    products['category'] = category_results.apply(lambda result: result[0])
+    products['category_source'] = category_results.apply(lambda result: result[1])
 
     keep_cols = [
         'customer_id',
@@ -594,6 +624,8 @@ def build_campaign_table(
 
     if category_mode == 'Manual' and clean_text_value(manual_category, '') != '':
         work['campaign_category'] = manual_category.strip()
+    elif 'campaign_category' in work.columns:
+        work['campaign_category'] = work['campaign_category'].apply(format_category_output)
     else:
         work['campaign_category'] = work['dominant_category_display'].apply(format_category_output)
 
@@ -828,7 +860,7 @@ def plot_horizontal_counts(counts: pd.Series, title: str, xlabel: str, ylabel: s
 
     plot_data = counts.sort_values(ascending=True)
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.barh(plot_data.index.astype(str), plot_data.values)
+    ax.barh(plot_data.index.astype(str), plot_data.values, color=CHART_COLORS[0])
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -1848,16 +1880,27 @@ def main():
     top_risk_active = state['top_risk_active']
     X_all = state['X_all']
 
-    tabs = st.tabs([
+    page_options = [
         '1. Overview',
         '2. Churn & RFM',
         '3. Categories',
         '4. Campaign builder',
         '5. EDA: WordCloud & Word2Vec',
         'ℹ️ Про модель',
-    ])
+    ]
 
-    with tabs[0]:
+    if st.session_state.get('active_page') not in page_options:
+        st.session_state['active_page'] = page_options[0]
+
+    active_page = st.radio(
+        'Розділ',
+        page_options,
+        horizontal=True,
+        key='active_page',
+        label_visibility='collapsed',
+    )
+
+    if active_page == '1. Overview':
         st.markdown('### Огляд')
         c1, c2, c3 = st.columns(3)
 
@@ -1913,41 +1956,10 @@ def main():
 
         cluster_stats['avg_churn_risk_pct'] = cluster_stats['avg_churn_risk_pct'].round(1)
 
-        CLUSTER_STRATEGY = {
-            'VIP клієнти': (
-                '👑 Програма лояльності VIP',
-                'Ексклюзивні пропозиції, ранній доступ до новинок, персональний менеджер. '
-                'Мета — утримати та збільшити LTV.',
-                '#1a3a1a',
-            ),
-            'Активні покупці': (
-                '🔁 Підвищення частоти',
-                'Програма балів за повторні покупки, нагадування про улюблені категорії, '
-                'акції "купи ще раз". Мета — збільшити частоту візитів.',
-                '#1a2a3a',
-            ),
-            'Помірні покупці': (
-                '📈 Апселінг та крос-сейл',
-                'Пропозиції суміжних категорій, bundle-офери, "схожі товари". '
-                'Мета — підвищити середній чек та розширити категорії.',
-                '#2a2a1a',
-            ),
-            'Малоактивні клієнти': (
-                '🔔 Реактивація',
-                'Win-back кампанія зі знижкою на першу повторну покупку, '
-                'нагадування про бонуси, що "горять". Мета — повернути до активності.',
-                '#3a1a1a',
-            ),
-        }
-
         for _, _row in cluster_stats.iterrows():
             _cname = _row['customer_cluster_name']
-            _strat_title, _strat_text, _bg = CLUSTER_STRATEGY.get(
-                _cname,
-                ('💡 Загальна стратегія',
-                 'Сегментована комунікація відповідно до поведінки.',
-                 '#1e1e2e'),
-            )
+            _strat_title, _strat_text = cluster_strategy_text(_cname)
+            _bg = '#1a2a3a'
             if not _dark:
                 _bg = '#ffffff'
             _risk_pct = float(_row['avg_churn_risk_pct'])
@@ -2165,7 +2177,7 @@ def main():
             else:
                 st.write('Додаткових нотаток немає.')
 
-    with tabs[1]:
+    elif active_page == '2. Churn & RFM':
         st.markdown('### 📊 Churn-модель: метрики')
 
         def _stat_card(col, label, value, hint='', color='#7c9fe6'):
@@ -2256,7 +2268,7 @@ def main():
         dark_table(rfm.head(50), hide_index=True, height=420)
         download_dataframe_button(rfm, 'rfm_table.csv', 'Завантажити RFM таблицю')
 
-    with tabs[2]:
+    elif active_page == '3. Categories':
         st.markdown('### Категорії клієнтів')
         c1, c2, c3 = st.columns(3)
         metric_row(
@@ -2282,7 +2294,7 @@ def main():
             preview_cols = [col for col in preview_cols if col in state['products'].columns]
             dark_table(state['products'][preview_cols].head(100), hide_index=True, height=420)
 
-    with tabs[3]:
+    elif active_page == '4. Campaign builder':
         st.markdown('### Конструктор кампаній')
 
         filter_col1, filter_col2 = st.columns(2)
@@ -2329,6 +2341,67 @@ def main():
             channel_mode = st.selectbox('Канал кампанії', list(CHANNEL_LABELS.keys()), format_func=lambda x: CHANNEL_LABELS[x])
             audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
 
+        # ── A. Train feedback response model (once per session) ─────────────────
+        fb_artifacts = None
+        if feedback_file is not None:
+            try:
+                _fb_raw = load_table_bytes(feedback_file.getvalue(), feedback_file.name)
+                detected = autodetect_feedback_columns(_fb_raw)
+                cid_col = detected['customer_id']
+                item_col = detected['item']
+                reaction_col = detected['reaction']
+
+                if cid_col and item_col and reaction_col:
+                    _fb_raw[cid_col] = _fb_raw[cid_col].astype(str).str.strip()
+
+                    _feedback_cache_key = (
+                        feedback_file.name,
+                        len(feedback_file.getvalue()),
+                        tuple(_fb_raw.columns),
+                        len(_fb_raw),
+                        len(latest_customers),
+                    )
+                    _cached_feedback = st.session_state.get('_feedback_response_cache')
+
+                    if (
+                        _cached_feedback is not None
+                        and _cached_feedback.get('key') == _feedback_cache_key
+                    ):
+                        fb_artifacts = _cached_feedback.get('artifacts')
+                    else:
+                        X_fb, y_fb, groups_fb, fcols, ccols = prepare_feedback_training_set(
+                            feedback_df=_fb_raw,
+                            customer_features=latest_customers,
+                            categorizer=lambda t: categorize_product(t)[0],
+                            cid_col=cid_col,
+                            item_col=item_col,
+                            reaction_col=reaction_col,
+                        )
+                        fb_service = FeedbackResponseService(use_xgboost=True)
+                        fb_artifacts = fb_service.train(X_fb, y_fb, groups_fb, fcols, ccols)
+                        st.session_state['_feedback_response_cache'] = {
+                            'key': _feedback_cache_key,
+                            'artifacts': fb_artifacts,
+                        }
+
+                    st.success(
+                        f'✅ Feedback-модель навчена ({fb_artifacts.algorithm_name}). '
+                        f'ROC-AUC = {fb_artifacts.roc_auc:.4f}. '
+                        f'Категорій у моделі: {len(fb_artifacts.known_categories)}.'
+                    )
+                else:
+                    st.warning(
+                        f'Feedback файл не містить усіх потрібних колонок. '
+                        f'Знайдено: {detected}. Очікується customer_id + item + reaction.'
+                    )
+            except Exception as _err:
+                st.error(f'Помилка тренування feedback-моделі: {_err}')
+
+        # ── B. Build campaign WITH feedback-aware recommendations ──────────────
+        if fb_artifacts is not None and len(audience) > 0:
+            audience = attach_feedback_recommendations(audience, fb_artifacts)
+            audience['campaign_category'] = audience['best_category']
+
         final_campaign = build_campaign_table(
             audience=audience,
             campaign_name=campaign_name,
@@ -2337,6 +2410,22 @@ def main():
             category_mode=category_mode,
             manual_category=manual_category,
         )
+
+        if fb_artifacts is not None and 'best_category' in audience.columns:
+            fb_cols = [
+                'customer_id',
+                'best_category',
+                'top_categories_ranked',
+                'response_prob_pct',
+                'discount_pct',
+                'recommended_message',
+            ]
+            fb_cols = [col for col in fb_cols if col in audience.columns]
+            final_campaign = final_campaign.merge(
+                audience[fb_cols],
+                on='customer_id',
+                how='left',
+            )
 
         st.markdown(f'### \u0420\u043e\u0437\u043c\u0456\u0440 \u0430\u0443\u0434\u0438\u0442\u043e\u0440\u0456\u0457: {len(final_campaign)}')
 
@@ -2453,10 +2542,10 @@ def main():
                 download_dataframe_button(effect_details, 'campaign_effect_details.csv', 'Завантажити деталі ефекту')
 
 
-    with tabs[4]:
+    elif active_page == '5. EDA: WordCloud & Word2Vec':
         render_eda_tab(state)
 
-    with tabs[5]:
+    elif active_page == 'ℹ️ Про модель':
         st.markdown('## 📊 Про модель')
         st.markdown(
             '> Нижче показані всі метрики навчання churn-моделі — так, як показано у презентації.'
