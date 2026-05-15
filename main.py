@@ -2309,15 +2309,14 @@ def main():
         download_dataframe_button(rfm, 'rfm_table.csv', 'Завантажити RFM таблицю')
 
     elif active_page == '3. Categories':
-        st.markdown('### Категорії клієнтів')
-        c1, c2, c3 = st.columns(3)
-        metric_row(
-            c1, 'Клієнтів із конкретною категорією, %', state['category_coverage_pct'],
-            c2, 'Клієнтів з fallback-категорією', int((latest_customers['dominant_category_display'] == CATEGORY_OTHER_LABEL).sum()),
-            c3, 'Товарних рядків для автокатегоризації', len(state['products']),
-        )
+        st.markdown('### Найчастіші категорії клієнтів')
+        # c1, c2, c3 = st.columns(3)
+        # metric_row(
+        #     c1, 'Клієнтів із конкретною категорією, %', state['category_coverage_pct'],
+        #     c2, 'Клієнтів з fallback-категорією', int((latest_customers['dominant_category_display'] == CATEGORY_OTHER_LABEL).sum()),
+        #     c3, 'Товарних рядків для автокатегоризації', len(state['products']),
+        # )
 
-        st.markdown('### Найчастіші категорії')
         chart_df = state['specific_category_counts'].copy()
         if len(chart_df) == 0:
             chart_df = state['category_counts'].copy()
@@ -2325,9 +2324,9 @@ def main():
         _cat_s = chart_df.head(10).set_index('category')['customers']
         plot_horizontal_counts(_cat_s, 'Топ категорій', 'Кількість клієнтів', 'Категорія')
 
-        st.markdown('### Узгоджений профіль категорій клієнтів')
-        dark_table(category_table.head(100), hide_index=True, height=420)
-        download_dataframe_button(category_table, 'customer_category_profile.csv', 'Завантажити профіль категорій')
+        # st.markdown('### Узгоджений профіль категорій клієнтів')
+        # dark_table(category_table.head(100), hide_index=True, height=420)
+        # download_dataframe_button(category_table, 'customer_category_profile.csv', 'Завантажити профіль категорій')
 
         # with st.expander('Показати приклади автокатегоризації товарів'):
         #     preview_cols = ['customer_id', 'product_id', 'product_name', 'category']
@@ -2589,7 +2588,7 @@ def main():
             st.markdown('### Фінальна таблиця кампанії')
             dark_table(final_campaign.head(audience_limit), hide_index=True, height=460)
             download_dataframe_button(final_campaign, 'campaign_final.csv', 'Завантажити фінальну кампанію')
-            download_dataframe_button(effect_summary, 'campaign_effect_summary.csv', 'Завантажити оцінку ефекту')
+            # download_dataframe_button(effect_summary, 'campaign_effect_summary.csv', 'Завантажити оцінку ефекту')
 
             # with st.expander('Показати деталі оцінки ефекту'):
             #     dark_table(effect_details.head(audience_limit), hide_index=True, height=460)
