@@ -969,7 +969,7 @@ def render_word2vec_block(product_clusters: pd.DataFrame, semantic_summary: pd.D
 
 
 def render_eda_tab(state: dict) -> None:
-    st.markdown('### EDA-графіки з презентації')
+    st.markdown('### EDA-графіки')
 
     featured = state['featured']
     latest_customers = state['latest_customers']
@@ -1885,8 +1885,7 @@ def main():
         '2. Churn & RFM',
         '3. Categories',
         '4. Campaign builder',
-        '5. EDA: WordCloud & Word2Vec',
-        'ℹ️ Про модель',
+        '5. EDA: WordCloud & Word2Vec'
     ]
 
     if st.session_state.get('active_page') not in page_options:
@@ -2258,7 +2257,48 @@ def main():
                 )
 
         with st.expander('📊 Важливість ознак (Top-20)'):
-            dark_table(feature_importance.head(20), hide_index=True, height=420)
+            importance_plot = feature_importance.head(20).copy()
+
+            if importance_plot.empty:
+                st.info('Немає даних для графіка важливості ознак.')
+            else:
+                feature_col = importance_plot.columns[0]
+                importance_col = importance_plot.columns[-1]
+
+                importance_plot[importance_col] = pd.to_numeric(
+                    importance_plot[importance_col],
+                    errors='coerce'
+                ).fillna(0)
+
+                importance_plot = importance_plot.sort_values(
+                    by=importance_col,
+                    ascending=True
+                )
+
+                fig, ax = plt.subplots(figsize=(10, 7))
+
+                ax.barh(
+                    importance_plot[feature_col].astype(str),
+                    importance_plot[importance_col],
+                    color=CHART_COLORS[0]
+                )
+
+                ax.set_title('Важливість ознак моделі')
+                ax.set_xlabel('Важливість')
+                ax.set_ylabel('Ознака')
+                ax.grid(axis='x', alpha=0.3)
+
+                for i, value in enumerate(importance_plot[importance_col]):
+                    ax.text(
+                        value,
+                        i,
+                        f' {value:.4f}',
+                        va='center',
+                        fontsize=9
+                    )
+
+                fig.tight_layout()
+                finish_chart(fig)
 
         st.markdown('### 📋 RFM-сегменти')
         _rfm_s = state['rfm_counts'].set_index('rfm_segment')['customers']
@@ -2289,58 +2329,72 @@ def main():
         dark_table(category_table.head(100), hide_index=True, height=420)
         download_dataframe_button(category_table, 'customer_category_profile.csv', 'Завантажити профіль категорій')
 
-        with st.expander('Показати приклади автокатегоризації товарів'):
-            preview_cols = ['customer_id', 'product_id', 'product_name', 'category']
-            preview_cols = [col for col in preview_cols if col in state['products'].columns]
-            dark_table(state['products'][preview_cols].head(100), hide_index=True, height=420)
+        # with st.expander('Показати приклади автокатегоризації товарів'):
+        #     preview_cols = ['customer_id', 'product_id', 'product_name', 'category']
+        #     preview_cols = [col for col in preview_cols if col in state['products'].columns]
+        #     dark_table(state['products'][preview_cols].head(100), hide_index=True, height=420)
 
     elif active_page == '4. Campaign builder':
         st.markdown('### Конструктор кампаній')
 
-        filter_col1, filter_col2 = st.columns(2)
-        with filter_col1:
-            min_risk = st.slider('Мінімальна ймовірність відтоку (%)', 0, 100, 40)
-            risk_options = ['All'] + sorted_options(latest_customers['risk_class'])
-            selected_risk = st.selectbox('Фільтр по ризику', risk_options)
-            category_options = ['All'] + sorted_options(latest_customers['dominant_category_display'])
-            selected_category_filter = st.selectbox('Фільтр по категорії', category_options)
-
-        with filter_col2:
-            segment_options = ['All'] + sorted_options(latest_customers['rfm_segment'])
-            selected_segment = st.selectbox('Фільтр по RFM-сегменту', segment_options)
-            cluster_options = ['All'] + sorted_options(latest_customers['customer_cluster_name'])
-            selected_cluster = st.selectbox('Фільтр по кластеру клієнтів', cluster_options)
-            only_active = st.checkbox('Лише активні клієнти', value=True)
-
-        audience = latest_customers.copy()
-        audience = audience[audience['churn_probability_percent'] >= min_risk]
-
-        if only_active:
-            audience = audience[audience['is_currently_active'] == True]
-        if selected_risk != 'All':
-            audience = audience[audience['risk_class'] == selected_risk]
-        if selected_segment != 'All':
-            audience = audience[audience['rfm_segment'] == selected_segment]
-        if selected_category_filter != 'All':
-            audience = audience[audience['dominant_category_display'] == selected_category_filter]
-        if selected_cluster != 'All':
-            audience = audience[audience['customer_cluster_name'] == selected_cluster]
-
-        audience = audience.sort_values(by='churn_probability_percent', ascending=False).reset_index(drop=True).copy()
+        # filter_col1, filter_col2 = st.columns(2)
+        # with filter_col1:
+        #     min_risk = st.slider('Мінімальна ймовірність відтоку (%)', 0, 100, 40)
+        #     risk_options = ['All'] + sorted_options(latest_customers['risk_class'])
+        #     selected_risk = st.selectbox('Фільтр по ризику', risk_options)
+        #     category_options = ['All'] + sorted_options(latest_customers['dominant_category_display'])
+        #     selected_category_filter = st.selectbox('Фільтр по категорії', category_options)
+        #
+        # with filter_col2:
+        #     segment_options = ['All'] + sorted_options(latest_customers['rfm_segment'])
+        #     selected_segment = st.selectbox('Фільтр по RFM-сегменту', segment_options)
+        #     cluster_options = ['All'] + sorted_options(latest_customers['customer_cluster_name'])
+        #     selected_cluster = st.selectbox('Фільтр по кластеру клієнтів', cluster_options)
+        #     only_active = st.checkbox('Лише активні клієнти', value=True)
+        #
+        # audience = latest_customers.copy()
+        # audience = audience[audience['churn_probability_percent'] >= min_risk]
+        #
+        # if only_active:
+        #     audience = audience[audience['is_currently_active'] == True]
+        # if selected_risk != 'All':
+        #     audience = audience[audience['risk_class'] == selected_risk]
+        # if selected_segment != 'All':
+        #     audience = audience[audience['rfm_segment'] == selected_segment]
+        # if selected_category_filter != 'All':
+        #     audience = audience[audience['dominant_category_display'] == selected_category_filter]
+        # if selected_cluster != 'All':
+        #     audience = audience[audience['customer_cluster_name'] == selected_cluster]
+        #
+        # audience = audience.sort_values(by='churn_probability_percent', ascending=False).reset_index(drop=True).copy()
 
         st.markdown('### Налаштування кампанії')
-        setup_col1, setup_col2 = st.columns(2)
+        # setup_col1, setup_col2 = st.columns(2)
+        #
+        # with setup_col1:
+        #     campaign_name = st.text_input('Назва кампанії', value='Retention campaign')
+        #     offer_type = st.selectbox('Тип оферу', list(OFFER_TYPE_LABELS.keys()), format_func=lambda x: OFFER_TYPE_LABELS[x])
+        #     category_mode = st.selectbox('Категорія оферу', ['Auto', 'Manual'], format_func=lambda x: 'Авто з профілю клієнта' if x == 'Auto' else 'Вручну')
+        #     manual_category = st.text_input('Ручна категорія оферу', value='') if category_mode == 'Manual' else ''
+        #
+        # with setup_col2:
+        #     channel_mode = st.selectbox('Канал кампанії', list(CHANNEL_LABELS.keys()), format_func=lambda x: CHANNEL_LABELS[x])
+        #     audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
+        audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
+        campaign_name = 'Retention campaign'
+        offer_type = 'Auto'
+        category_mode = 'Auto'
+        manual_category = ''
+        channel_mode = 'Auto'
 
-        with setup_col1:
-            campaign_name = st.text_input('Назва кампанії', value='Retention campaign')
-            offer_type = st.selectbox('Тип оферу', list(OFFER_TYPE_LABELS.keys()), format_func=lambda x: OFFER_TYPE_LABELS[x])
-            category_mode = st.selectbox('Категорія оферу', ['Auto', 'Manual'], format_func=lambda x: 'Авто з профілю клієнта' if x == 'Auto' else 'Вручну')
-            manual_category = st.text_input('Ручна категорія оферу', value='') if category_mode == 'Manual' else ''
+        min_risk = 40
+        selected_risk = 'All'
+        selected_segment = 'All'
+        selected_category_filter = 'All'
+        selected_cluster = 'All'
+        only_active = True
 
-        with setup_col2:
-            channel_mode = st.selectbox('Канал кампанії', list(CHANNEL_LABELS.keys()), format_func=lambda x: CHANNEL_LABELS[x])
-            audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
-
+        audience = latest_customers.copy()
         # ── A. Train feedback response model (once per session) ─────────────────
         fb_artifacts = None
         if feedback_file is not None:
@@ -2537,138 +2591,135 @@ def main():
             download_dataframe_button(final_campaign, 'campaign_final.csv', 'Завантажити фінальну кампанію')
             download_dataframe_button(effect_summary, 'campaign_effect_summary.csv', 'Завантажити оцінку ефекту')
 
-            with st.expander('Показати деталі оцінки ефекту'):
-                dark_table(effect_details.head(audience_limit), hide_index=True, height=460)
-                download_dataframe_button(effect_details, 'campaign_effect_details.csv', 'Завантажити деталі ефекту')
+            # with st.expander('Показати деталі оцінки ефекту'):
+            #     dark_table(effect_details.head(audience_limit), hide_index=True, height=460)
+            #     download_dataframe_button(effect_details, 'campaign_effect_details.csv', 'Завантажити деталі ефекту')
 
 
     elif active_page == '5. EDA: WordCloud & Word2Vec':
         render_eda_tab(state)
 
-    elif active_page == 'ℹ️ Про модель':
-        st.markdown('## 📊 Про модель')
-        st.markdown(
-            '> Нижче показані всі метрики навчання churn-моделі — так, як показано у презентації.'
-        )
-
-        _ca = churn_artifacts
-
-        # ── Big metric cards ──────────────────────────────────────────────────
-        _mc = st.columns(4)
-
-        def _big_metric(col, label, value, sub=''):
-            with col:
-                _bg   = '#ffffff' if not _dark else '#1a1e2e'
-                _bdr  = '1px solid #d9d9d9' if not _dark else '1px solid rgba(255,255,255,0.07)'
-                _lclr = '#000000' if not _dark else '#8891aa'
-                _vclr = '#000000' if not _dark else '#7c9fe6'
-                _sclr = '#000000' if not _dark else '#4a5580'
-                st.markdown(
-                    f'<div style="background:{_bg};border-radius:10px;padding:18px 16px;text-align:center;border:{_bdr};box-shadow:none">'
-                    f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:{_lclr};margin-bottom:4px">{label}</div>'
-                    f'<div style="font-size:40px;font-weight:800;color:{_vclr};line-height:1">{value}</div>'
-                    f'<div style="font-size:12px;color:{_sclr};margin-top:4px">{sub}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-        _auc_val  = getattr(_ca, 'roc_auc',  float('nan'))
-        _acc_val  = getattr(_ca, 'accuracy',  float('nan'))
-        _prec_val = getattr(_ca, 'precision', float('nan'))
-        _rec_val  = getattr(_ca, 'recall',    float('nan'))
-        _f1_val   = getattr(_ca, 'f1',        float('nan'))
-        _ll_val   = getattr(_ca, 'logloss',   float('nan'))
-        _algo     = getattr(_ca, 'algorithm_name', 'n/a')
-        _n_test   = len(getattr(_ca, 'test_index', []))
-
-        def _fmt(v):
-            try:
-                return f'{v:.4f}'
-            except Exception:
-                return 'n/a'
-
-        _big_metric(_mc[0], 'ROC-AUC',   _fmt(_auc_val),  'де 0.5 = випадково, 1.0 = ідеал')
-        _big_metric(_mc[1], 'Accuracy',  _fmt(_acc_val),  f'Test rows: {_n_test}')
-        _big_metric(_mc[2], 'F1-score',  _fmt(_f1_val),   'Precision / Recall')
-        _big_metric(_mc[3], 'LogLoss',   _fmt(_ll_val),   'нижче = краще')
-
-        st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-
-        _mc2 = st.columns(4)
-        _big_metric(_mc2[0], 'Precision', _fmt(_prec_val), 'TP / (TP+FP)')
-        _big_metric(_mc2[1], 'Recall',    _fmt(_rec_val),  'TP / (TP+FN)')
-        _big_metric(_mc2[2], 'Алгоритм',   _algo,           '')
-        _big_metric(_mc2[3], 'Test size', f'{_n_test}',    'рядків')
-
-        st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
-
-        # ── ROC curve + Confusion matrix side by side ─────────────────────────
-        _rcol, _ccol = st.columns([3, 2])
-        with _rcol:
-            st.markdown('#### ROC-крива')
-            plot_roc_curve(_ca.fpr, _ca.tpr, _ca.roc_auc)
-
-        with _ccol:
-            st.markdown('#### Confusion Matrix')
-            _cm = getattr(_ca, 'confusion_matrix_table', None)
-            if _cm is not None:
-                dark_table(_cm, hide_index=False, height=260)
-                _tn = int(_cm.iloc[0, 0])
-                _fp = int(_cm.iloc[0, 1])
-                _fn = int(_cm.iloc[1, 0])
-                _tp = int(_cm.iloc[1, 1])
-                _cm_bg  = '#ffffff' if not _dark else '#1a1e2e'
-                _cm_txt = '#000000' if not _dark else '#8891aa'
-                _tp_c   = '#000000' if not _dark else '#e8eaf0'
-                _err_c  = '#000000' if not _dark else '#dc2626'
-                _warn_c = '#000000' if not _dark else '#d97706'
-                st.markdown(
-                    f'<div style="margin-top:12px;background:{_cm_bg};border-radius:10px;padding:12px 16px;font-size:13px;color:{_cm_txt};border:1px solid {"#d9d9d9" if not _dark else "rgba(255,255,255,.07)"}">'
-                    f'<b style="color:{_tp_c}">TP</b> {_tp} &nbsp; '
-                    f'<b style="color:{_tp_c}">TN</b> {_tn} &nbsp; '
-                    f'<b style="color:{_err_c}">FP</b> {_fp} &nbsp; '
-                    f'<b style="color:{_warn_c}">FN</b> {_fn}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.info('Confusion matrix недоступна.')
-
-        # ── Feature importance ────────────────────────────────────────────────
-        st.markdown('#### Важливість ознак (Top-20)')
-        _fi = feature_importance.head(20).copy()
-        if not _fi.empty:
-            import matplotlib.pyplot as _plt
-            _fig, _ax = _plt.subplots(figsize=(8, max(4, len(_fi) * 0.32)))
-            _colors = ['#000000' if i < 5 else '#777777' for i in range(len(_fi))] if not _dark else ['#7c9fe6' if i < 5 else '#4a5580' for i in range(len(_fi))]
-            _ax.barh(_fi['feature'][::-1], _fi['importance'][::-1], color=_colors[::-1])
-            _ax.set_xlabel('Importance')
-            _ax.set_title('Feature importances (top 20)', fontsize=11)
-            _ax.spines[['top', 'right']].set_visible(False)
-            _fig.tight_layout()
-            st.pyplot(_fig)
-
-        from src.config import LOW_RISK_MAX, MEDIUM_RISK_MAX
-        _r_val_c = '#000000' if not _dark else '#e8eaf0'
-        _risk_label_c = '#000000' if not _dark else None
-        _low_bg  = '#ffffff' if not _dark else '#1a3a1a'
-        _mid_bg  = '#ffffff' if not _dark else '#2a2a1a'
-        _hi_bg   = '#ffffff' if not _dark else '#3a1a1a'
-        _risk_border = '#d9d9d9' if not _dark else 'transparent'
-        st.markdown(
-            f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">'
-            f'<div style="background:{_low_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:{_risk_label_c or "#059669"};font-size:13px;font-weight:700">Low risk</div>'
-            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">≤ {LOW_RISK_MAX*100:.0f}%</div></div>'
-            f'<div style="background:{_mid_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:{_risk_label_c or "#d97706"};font-size:13px;font-weight:700">Medium risk</div>'
-            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">{LOW_RISK_MAX*100:.0f}–{MEDIUM_RISK_MAX*100:.0f}%</div></div>'
-            f'<div style="background:{_hi_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
-            f'<div style="color:{_risk_label_c or "#dc2626"};font-size:13px;font-weight:700">High risk</div>'
-            f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">&gt; {MEDIUM_RISK_MAX*100:.0f}%</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    # elif active_page == 'ℹ️ Про модель':
+    #     st.markdown('## 📊 Про модель')
+    #
+    #     _ca = churn_artifacts
+    #
+    #     # ── Big metric cards ──────────────────────────────────────────────────
+    #     _mc = st.columns(4)
+    #
+    #     def _big_metric(col, label, value, sub=''):
+    #         with col:
+    #             _bg   = '#ffffff' if not _dark else '#1a1e2e'
+    #             _bdr  = '1px solid #d9d9d9' if not _dark else '1px solid rgba(255,255,255,0.07)'
+    #             _lclr = '#000000' if not _dark else '#8891aa'
+    #             _vclr = '#000000' if not _dark else '#7c9fe6'
+    #             _sclr = '#000000' if not _dark else '#4a5580'
+    #             st.markdown(
+    #                 f'<div style="background:{_bg};border-radius:10px;padding:18px 16px;text-align:center;border:{_bdr};box-shadow:none">'
+    #                 f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:{_lclr};margin-bottom:4px">{label}</div>'
+    #                 f'<div style="font-size:40px;font-weight:800;color:{_vclr};line-height:1">{value}</div>'
+    #                 f'<div style="font-size:12px;color:{_sclr};margin-top:4px">{sub}</div>'
+    #                 f'</div>',
+    #                 unsafe_allow_html=True,
+    #             )
+    #
+    #     _auc_val  = getattr(_ca, 'roc_auc',  float('nan'))
+    #     _acc_val  = getattr(_ca, 'accuracy',  float('nan'))
+    #     _prec_val = getattr(_ca, 'precision', float('nan'))
+    #     _rec_val  = getattr(_ca, 'recall',    float('nan'))
+    #     _f1_val   = getattr(_ca, 'f1',        float('nan'))
+    #     _ll_val   = getattr(_ca, 'logloss',   float('nan'))
+    #     _algo     = getattr(_ca, 'algorithm_name', 'n/a')
+    #     _n_test   = len(getattr(_ca, 'test_index', []))
+    #
+    #     def _fmt(v):
+    #         try:
+    #             return f'{v:.4f}'
+    #         except Exception:
+    #             return 'n/a'
+    #
+    #     _big_metric(_mc[0], 'ROC-AUC',   _fmt(_auc_val),  'де 0.5 = випадково, 1.0 = ідеал')
+    #     _big_metric(_mc[1], 'Accuracy',  _fmt(_acc_val),  f'Test rows: {_n_test}')
+    #     _big_metric(_mc[2], 'F1-score',  _fmt(_f1_val),   'Precision / Recall')
+    #     _big_metric(_mc[3], 'LogLoss',   _fmt(_ll_val),   'нижче = краще')
+    #
+    #     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+    #
+    #     _mc2 = st.columns(4)
+    #     _big_metric(_mc2[0], 'Precision', _fmt(_prec_val), 'TP / (TP+FP)')
+    #     _big_metric(_mc2[1], 'Recall',    _fmt(_rec_val),  'TP / (TP+FN)')
+    #     _big_metric(_mc2[2], 'Алгоритм',   _algo,           '')
+    #     _big_metric(_mc2[3], 'Test size', f'{_n_test}',    'рядків')
+    #
+    #     st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
+    #
+    #     # ── ROC curve + Confusion matrix side by side ─────────────────────────
+    #     _rcol, _ccol = st.columns([3, 2])
+    #     with _rcol:
+    #         st.markdown('#### ROC-крива')
+    #         plot_roc_curve(_ca.fpr, _ca.tpr, _ca.roc_auc)
+    #
+    #     with _ccol:
+    #         st.markdown('#### Confusion Matrix')
+    #         _cm = getattr(_ca, 'confusion_matrix_table', None)
+    #         if _cm is not None:
+    #             dark_table(_cm, hide_index=False, height=260)
+    #             _tn = int(_cm.iloc[0, 0])
+    #             _fp = int(_cm.iloc[0, 1])
+    #             _fn = int(_cm.iloc[1, 0])
+    #             _tp = int(_cm.iloc[1, 1])
+    #             _cm_bg  = '#ffffff' if not _dark else '#1a1e2e'
+    #             _cm_txt = '#000000' if not _dark else '#8891aa'
+    #             _tp_c   = '#000000' if not _dark else '#e8eaf0'
+    #             _err_c  = '#000000' if not _dark else '#dc2626'
+    #             _warn_c = '#000000' if not _dark else '#d97706'
+    #             st.markdown(
+    #                 f'<div style="margin-top:12px;background:{_cm_bg};border-radius:10px;padding:12px 16px;font-size:13px;color:{_cm_txt};border:1px solid {"#d9d9d9" if not _dark else "rgba(255,255,255,.07)"}">'
+    #                 f'<b style="color:{_tp_c}">TP</b> {_tp} &nbsp; '
+    #                 f'<b style="color:{_tp_c}">TN</b> {_tn} &nbsp; '
+    #                 f'<b style="color:{_err_c}">FP</b> {_fp} &nbsp; '
+    #                 f'<b style="color:{_warn_c}">FN</b> {_fn}'
+    #                 f'</div>',
+    #                 unsafe_allow_html=True,
+    #             )
+    #         else:
+    #             st.info('Confusion matrix недоступна.')
+    #
+    #     # ── Feature importance ────────────────────────────────────────────────
+    #     st.markdown('#### Важливість ознак (Top-20)')
+    #     _fi = feature_importance.head(20).copy()
+    #     if not _fi.empty:
+    #         import matplotlib.pyplot as _plt
+    #         _fig, _ax = _plt.subplots(figsize=(8, max(4, len(_fi) * 0.32)))
+    #         _colors = ['#000000' if i < 5 else '#777777' for i in range(len(_fi))] if not _dark else ['#7c9fe6' if i < 5 else '#4a5580' for i in range(len(_fi))]
+    #         _ax.barh(_fi['feature'][::-1], _fi['importance'][::-1], color=_colors[::-1])
+    #         _ax.set_xlabel('Importance')
+    #         _ax.set_title('Feature importances (top 20)', fontsize=11)
+    #         _ax.spines[['top', 'right']].set_visible(False)
+    #         _fig.tight_layout()
+    #         st.pyplot(_fig)
+    #
+    #     from src.config import LOW_RISK_MAX, MEDIUM_RISK_MAX
+    #     _r_val_c = '#000000' if not _dark else '#e8eaf0'
+    #     _risk_label_c = '#000000' if not _dark else None
+    #     _low_bg  = '#ffffff' if not _dark else '#1a3a1a'
+    #     _mid_bg  = '#ffffff' if not _dark else '#2a2a1a'
+    #     _hi_bg   = '#ffffff' if not _dark else '#3a1a1a'
+    #     _risk_border = '#d9d9d9' if not _dark else 'transparent'
+    #     st.markdown(
+    #         f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">'
+    #         f'<div style="background:{_low_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+    #         f'<div style="color:{_risk_label_c or "#059669"};font-size:13px;font-weight:700">Low risk</div>'
+    #         f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">≤ {LOW_RISK_MAX*100:.0f}%</div></div>'
+    #         f'<div style="background:{_mid_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+    #         f'<div style="color:{_risk_label_c or "#d97706"};font-size:13px;font-weight:700">Medium risk</div>'
+    #         f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">{LOW_RISK_MAX*100:.0f}–{MEDIUM_RISK_MAX*100:.0f}%</div></div>'
+    #         f'<div style="background:{_hi_bg};border:1px solid {_risk_border};border-radius:10px;padding:10px 18px;text-align:center">'
+    #         f'<div style="color:{_risk_label_c or "#dc2626"};font-size:13px;font-weight:700">High risk</div>'
+    #         f'<div style="color:{_r_val_c};font-size:18px;font-weight:800">&gt; {MEDIUM_RISK_MAX*100:.0f}%</div></div>'
+    #         f'</div>',
+    #         unsafe_allow_html=True,
+    #     )
 
 
 if __name__ == '__main__':
