@@ -2431,94 +2431,48 @@ def main():
     with tab_campaign:
         st.markdown('### Конструктор кампаній')
 
-        # filter_col1, filter_col2 = st.columns(2)
-        # with filter_col1:
-        #     min_risk = st.slider('Мінімальна ймовірність відтоку (%)', 0, 100, 40)
-        #     risk_options = ['All'] + sorted_options(latest_customers['risk_class'])
-        #     selected_risk = st.selectbox('Фільтр по ризику', risk_options)
-        #     category_options = ['All'] + sorted_options(latest_customers['dominant_category_display'])
-        #     selected_category_filter = st.selectbox('Фільтр по категорії', category_options)
-        #
-        # with filter_col2:
-        #     segment_options = ['All'] + sorted_options(latest_customers['rfm_segment'])
-        #     selected_segment = st.selectbox('Фільтр по RFM-сегменту', segment_options)
-        #     cluster_options = ['All'] + sorted_options(latest_customers['customer_cluster_name'])
-        #     selected_cluster = st.selectbox('Фільтр по кластеру клієнтів', cluster_options)
-        #     only_active = st.checkbox('Лише активні клієнти', value=True)
-        #
-        # audience = latest_customers.copy()
-        # audience = audience[audience['churn_probability_percent'] >= min_risk]
-        #
-        # if only_active:
-        #     audience = audience[audience['is_currently_active'] == True]
-        # if selected_risk != 'All':
-        #     audience = audience[audience['risk_class'] == selected_risk]
-        # if selected_segment != 'All':
-        #     audience = audience[audience['rfm_segment'] == selected_segment]
-        # if selected_category_filter != 'All':
-        #     audience = audience[audience['dominant_category_display'] == selected_category_filter]
-        # if selected_cluster != 'All':
-        #     audience = audience[audience['customer_cluster_name'] == selected_cluster]
-        #
-        # audience = audience.sort_values(by='churn_probability_percent', ascending=False).reset_index(drop=True).copy()
+        # Створюємо ізольований фрагмент. Усе, що всередині, оновлюватиметься окремо від усієї сторінки!
+        @st.fragment
+        def render_campaign_tab():
+            st.markdown('### Налаштування кампанії')
+            audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
+            
+            campaign_name = 'Retention campaign'
+            offer_type = 'Auto'
+            category_mode = 'Auto'
+            manual_category = ''
+            channel_mode = 'Auto'
 
-        st.markdown('### Налаштування кампанії')
-        # setup_col1, setup_col2 = st.columns(2)
-        #
-        # with setup_col1:
-        #     campaign_name = st.text_input('Назва кампанії', value='Retention campaign')
-        #     offer_type = st.selectbox('Тип оферу', list(OFFER_TYPE_LABELS.keys()), format_func=lambda x: OFFER_TYPE_LABELS[x])
-        #     category_mode = st.selectbox('Категорія оферу', ['Auto', 'Manual'], format_func=lambda x: 'Авто з профілю клієнта' if x == 'Auto' else 'Вручну')
-        #     manual_category = st.text_input('Ручна категорія оферу', value='') if category_mode == 'Manual' else ''
-        #
-        # with setup_col2:
-        #     channel_mode = st.selectbox('Канал кампанії', list(CHANNEL_LABELS.keys()), format_func=lambda x: CHANNEL_LABELS[x])
-        #     audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
-        audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
-        campaign_name = 'Retention campaign'
-        offer_type = 'Auto'
-        category_mode = 'Auto'
-        manual_category = ''
-        channel_mode = 'Auto'
-
-        min_risk = 40
-        selected_risk = 'All'
-        selected_segment = 'All'
-        selected_category_filter = 'All'
-        selected_cluster = 'All'
-        only_active = True
-
-        # ── Кнопка-гейт: важка робота тільки після кліку ─────────────────────
-        # Стан кампанії живе в session_state і інвалідовується при зміні даних
-        # (data_hash) або наявності/відсутності feedback-файлу.
-        _campaign_signature = (
-            len(latest_customers),
-            id(churn_artifacts),
-            feedback_file.name if feedback_file is not None else None,
-            feedback_file.size if feedback_file is not None else 0,
-        )
-        if st.session_state.get('_campaign_signature') != _campaign_signature:
-            st.session_state['_campaign_built'] = False
-            st.session_state['_campaign_signature'] = _campaign_signature
-
-        _build_clicked = st.button(
-            '🚀 Побудувати кампанію',
-            type='primary',
-            help='Аналізує аудиторію, навчає feedback-модель (якщо файл завантажено) та формує таблицю.',
-        )
-        if _build_clicked:
-            st.session_state['_campaign_built'] = True
-
-        if not st.session_state.get('_campaign_built', False):
-            st.info(
-                'ℹ️ Натисніть **Побудувати кампанію**, щоб згенерувати таблицю. '
-                + ('Виявлено feedback-файл — буде навчена модель реакції.' if feedback_file is not None
-                   else 'Без feedback-файлу буде використана евристика по ризику.')
+            _campaign_signature = (
+                len(latest_customers),
+                id(churn_artifacts),
+                feedback_file.name if feedback_file is not None else None,
+                feedback_file.size if feedback_file is not None else 0,
             )
-        else:  # вихід з main() — спінер не запускається
+            if st.session_state.get('_campaign_signature') != _campaign_signature:
+                st.session_state['_campaign_built'] = False
+                st.session_state['_campaign_signature'] = _campaign_signature
 
+            _build_clicked = st.button(
+                '🚀 Побудувати кампанію',
+                type='primary',
+                help='Аналізує аудиторію, навчає feedback-модель (якщо файл завантажено) та формує таблицю.',
+            )
+            if _build_clicked:
+                st.session_state['_campaign_built'] = True
+
+            if not st.session_state.get('_campaign_built', False):
+                st.info(
+                    'ℹ️ Натисніть **Побудувати кампанію**, щоб згенерувати таблицю. '
+                    + ('Виявлено feedback-файл — буде навчена модель реакції.' if feedback_file is not None
+                       else 'Без feedback-файлу буде використана евристика по ризику.')
+                )
+                # Тепер return безпечний! Він виходить лише з фрагмента, а не з усієї програми
+                return  
+
+            # --- Далі йде логіка, яка виконується ПІСЛЯ натискання кнопки ---
             audience = latest_customers.copy()
-            # ── A. Train feedback response model (once per session) ─────────────────
+            
             fb_artifacts = None
             if feedback_file is not None:
                 try:
@@ -2575,19 +2529,11 @@ def main():
                 except Exception as _err:
                     st.error(f'Помилка тренування feedback-моделі: {_err}')
 
-            # ── B. Build campaign — feedback-aware гілка vs heuristic гілка ────────
             if fb_artifacts is not None and len(audience) > 0:
-                # FEEDBACK ГІЛКА: використовуємо повний vector з feedback-моделі
-                # (discount_pct, recommended_message, recommended_channel, response_prob_pct).
                 audience = attach_feedback_recommendations(audience, fb_artifacts)
                 audience['campaign_category'] = audience['best_category']
                 final_campaign = build_feedback_campaign_table(audience, campaign_name)
-                # st.caption(
-                #     '🎯 Використано feedback-модель: знижка та канал масштабуються від '
-                #     'P(response), категорія обирається індивідуально на клієнта.'
-                # )
             else:
-                # HEURISTIC ГІЛКА: discount/channel залежать лише від churn_probability.
                 final_campaign = build_campaign_table(
                     audience=audience,
                     campaign_name=campaign_name,
@@ -2596,13 +2542,11 @@ def main():
                     category_mode=category_mode,
                     manual_category=manual_category,
                 )
-                # if feedback_file is None:
-                #     st.caption('ℹ️ Без feedback-файлу: discount/канал визначаються евристикою по ризику.')
 
-            st.markdown(f'### \u0420\u043e\u0437\u043c\u0456\u0440 \u0430\u0443\u0434\u0438\u0442\u043e\u0440\u0456\u0457: {len(final_campaign)}')
+            st.markdown(f'### Розмір аудиторії: {len(final_campaign)}')
 
-            st.markdown('### \U0001f39a What-if \u0441\u0446\u0435\u043d\u0430\u0440\u0456\u0439')
-            st.caption('\u0417\u043c\u043e\u0434\u0435\u043b\u044e\u0439\u0442\u0435, \u044f\u043a \u0437\u043c\u0456\u043d\u0430 \u043f\u043e\u0432\u0435\u0434\u0456\u043d\u043a\u0438 \u043a\u043b\u0456\u0454\u043d\u0442\u0456\u0432 \u0432\u043f\u043b\u0438\u043d\u0435 \u043d\u0430 \u0439\u043c\u043e\u0432\u0456\u0440\u043d\u0456\u0441\u0442\u044c \u0432\u0456\u0434\u0442\u043e\u043a\u0443.')
+            st.markdown('### 🎚 What-if сценарій')
+            st.caption('Змоделюйте, як зміна поведінки клієнтів вплине на ймовірність відтоку.')
 
             def _slider_html(val: int, unit: str = '%') -> str:
                 if val > 0:
@@ -2633,58 +2577,34 @@ def main():
             _sl1, _sl2, _sl3 = st.columns(3)
 
             with _sl1:
-                st.markdown('**\U0001f4c5 \u0427\u0430\u0441\u0442\u043e\u0442\u0430 \u043f\u043e\u043a\u0443\u043f\u043e\u043a**')
+                st.markdown('**📅 Частота покупок**')
                 freq_change_percent = st.slider(
-                    '\u0427\u0430\u0441\u0442\u043e\u0442\u0430, %',
+                    'Частота, %',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_freq',
-                    help='\u041f\u043e\u0437\u0438\u0442\u0438\u0432\u043d\u0435 = \u043a\u043b\u0456\u0454\u043d\u0442 \u043f\u043e\u0447\u0438\u043d\u0430\u0454 \u043a\u0443\u043f\u0443\u0432\u0430\u0442\u0438 \u0447\u0430\u0441\u0442\u0456\u0448\u0435',
                 )
                 st.markdown(_slider_html(freq_change_percent), unsafe_allow_html=True)
-                if freq_change_percent > 0:
-                    st.success(f'\u041a\u043b\u0456\u0454\u043d\u0442 \u043a\u0443\u043f\u0443\u0454 \u0447\u0430\u0441\u0442\u0456\u0448\u0435 \u043d\u0430 {freq_change_percent}%')
-                elif freq_change_percent < 0:
-                    st.error(f'\u041a\u043b\u0456\u0454\u043d\u0442 \u043a\u0443\u043f\u0443\u0454 \u0440\u0456\u0434\u0448\u0435 \u043d\u0430 {abs(freq_change_percent)}%')
-                else:
-                    st.info('\u0427\u0430\u0441\u0442\u043e\u0442\u0430 \u043d\u0435 \u0437\u043c\u0456\u043d\u044e\u0454\u0442\u044c\u0441\u044f')
 
             with _sl2:
-                st.markdown('**\U0001f6d2 \u0421\u0435\u0440\u0435\u0434\u043d\u0456\u0439 \u0447\u0435\u043a**')
+                st.markdown('**🛒 Середній чек**')
                 ticket_change_percent = st.slider(
-                    '\u0427\u0435\u043a, %',
+                    'Чек, %',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_ticket',
-                    help='\u0417\u043c\u0456\u043d\u0430 \u0441\u0435\u0440\u0435\u0434\u043d\u044c\u043e\u0433\u043e \u0440\u043e\u0437\u043c\u0456\u0440\u0443 \u043f\u043e\u043a\u0443\u043f\u043a\u0438',
                 )
                 st.markdown(_slider_html(ticket_change_percent), unsafe_allow_html=True)
-                if ticket_change_percent > 0:
-                    st.success(f'\u0427\u0435\u043a \u0437\u0440\u043e\u0441\u0442\u0430\u0454 \u043d\u0430 {ticket_change_percent}%')
-                elif ticket_change_percent < 0:
-                    st.error(f'\u0427\u0435\u043a \u0437\u043c\u0435\u043d\u0448\u0443\u0454\u0442\u044c\u0441\u044f \u043d\u0430 {abs(ticket_change_percent)}%')
-                else:
-                    st.info('\u0427\u0435\u043a \u043d\u0435 \u0437\u043c\u0456\u043d\u044e\u0454\u0442\u044c\u0441\u044f')
 
             with _sl3:
-                st.markdown('**\U0001f381 \u0420\u0435\u0430\u043a\u0446\u0456\u044f \u043d\u0430 \u0430\u043a\u0446\u0456\u0457**')
+                st.markdown('**🎁 Реакція на акції**')
                 promo_change_percent = st.slider(
-                    '\u041f\u0440\u043e\u043c\u043e, \u043f.\u043f.',
+                    'Промо, п.п.',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_promo',
-                    help='\u0417\u043c\u0456\u043d\u0430 \u0447\u0430\u0441\u0442\u043a\u0438 \u0442\u0440\u0430\u043d\u0437\u0430\u043a\u0446\u0456\u0439 \u0437 \u043f\u0440\u043e\u043c\u043e (\u0432 \u043f\u0440\u043e\u0446\u0435\u043d\u0442\u043d\u0438\u0445 \u043f\u0443\u043d\u043a\u0442\u0430\u0445)',
                 )
-                st.markdown(_slider_html(promo_change_percent, '\u00a0\u043f.\u043f.'), unsafe_allow_html=True)
-                if promo_change_percent > 0:
-                    st.success(f'\u041f\u0440\u043e\u043c\u043e-\u0430\u043a\u0442\u0438\u0432\u043d\u0456\u0441\u0442\u044c \u0437\u0440\u043e\u0441\u0442\u0430\u0454 \u043d\u0430 {promo_change_percent} \u043f.\u043f.')
-                elif promo_change_percent < 0:
-                    st.error(f'\u041f\u0440\u043e\u043c\u043e-\u0430\u043a\u0442\u0438\u0432\u043d\u0456\u0441\u0442\u044c \u043f\u0430\u0434\u0430\u0454 \u043d\u0430 {abs(promo_change_percent)} \u043f.\u043f.')
-                else:
-                    st.info('\u041f\u0440\u043e\u043c\u043e-\u0430\u043a\u0442\u0438\u0432\u043d\u0456\u0441\u0442\u044c \u043d\u0435 \u0437\u043c\u0456\u043d\u044e\u0454\u0442\u044c\u0441\u044f')
+                st.markdown(_slider_html(promo_change_percent, ' п.п.'), unsafe_allow_html=True)
 
-            # Симетричне передавання — обрізання робиться всередині estimate_campaign_effect.
             ticket_change = ticket_change_percent / 100
             freq_change = freq_change_percent / 100
             promo_change = promo_change_percent / 100
 
-            if len(audience) == 0:
-                st.info('За вибраними фільтрами аудиторія порожня.')
-            else:
+            if len(audience) > 0:
                 audience_X = X_all.loc[audience['feature_row_index']].copy().reset_index(drop=True)
                 effect_summary, effect_details = estimate_campaign_effect(
                     audience_df=audience,
@@ -2702,22 +2622,12 @@ def main():
                     metric_col3, 'Сер. ризик після, %', effect_summary['avg_risk_after_pct'].iloc[0],
                 )
 
-                # st.markdown('### Підсумок кампанії')
-                # effect_summary_display = effect_summary.drop(
-                #     columns=['avg_reduction_pp', 'customers_improved'],
-                #     errors='ignore',
-                # )
-                # dark_table(effect_summary_display, hide_index=True, height=260)
-
                 st.markdown('### Фінальна таблиця кампанії')
                 dark_table(final_campaign.head(audience_limit), hide_index=True, height=None)
                 download_dataframe_button(final_campaign, 'campaign_final.csv', 'Завантажити фінальну кампанію')
-                # download_dataframe_button(effect_summary, 'campaign_effect_summary.csv', 'Завантажити оцінку ефекту')
 
-                # with st.expander('Показати деталі оцінки ефекту'):
-                #     dark_table(effect_details.head(audience_limit), hide_index=True, height=460)
-                #     download_dataframe_button(effect_details, 'campaign_effect_details.csv', 'Завантажити деталі ефекту')
-
+        # Важливо: викликаємо наш фрагмент!
+        render_campaign_tab()
 
     with tab_eda:
         render_eda_tab(state)
