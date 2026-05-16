@@ -225,18 +225,35 @@ def preview_column_info(df: pd.DataFrame, n_examples: int = 3) -> list[dict]:
     return rows
 
 
+REQUIRED_CANONICAL_FIELDS = ('customer_id', 'transaction_date')
+
+
 def template_matches_schema(template: dict[str, str], columns: list[str]) -> bool:
     """
-    Return True if every source column in the saved template actually exists
-    in the current dataset — meaning the schema hasn't changed and the user
-    doesn't need to re-do the mapping.
+    Return True if the saved template is a SAFE auto-apply for the current dataset:
+      1. Template is non-empty.
+      2. Every mapped source column actually exists in the current dataset
+         (else mapping points to a non-existent column).
+      3. All REQUIRED_CANONICAL_FIELDS are mapped (customer_id, transaction_date).
+         Without these, downstream feature engineering crashes.
+    Якщо хоч одна вимога не виконана — UI маппінгу показується, не автозастосовується.
     """
     if not template:
         return False
+
     mapped_sources = [v for v in template.values() if v]
     if not mapped_sources:
         return False
-    return all(src in columns for src in mapped_sources)
+    if not all(src in columns for src in mapped_sources):
+        return False
+
+    # Усі обов'язкові канонічні поля мають бути присутні І вказувати на існуючу колонку.
+    for required in REQUIRED_CANONICAL_FIELDS:
+        src = template.get(required)
+        if not src or src not in columns:
+            return False
+
+    return True
 
 
 def load_csv_path(path: str | Path) -> pd.DataFrame:

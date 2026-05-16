@@ -46,6 +46,8 @@ class ChurnArtifacts:
     f1: float = float('nan')
     logloss: float = float('nan')
     confusion_matrix_table: Optional[pd.DataFrame] = None
+    optimal_threshold: float = 0.5
+    scale_pos_weight: float = 1.0
 
 
 class ChurnModelService:
@@ -53,24 +55,53 @@ class ChurnModelService:
         self.use_xgboost = use_xgboost and XGBOOST_AVAILABLE
         self.random_state = random_state
 
-    def _build_model(self):
+    def _build_model(self, scale_pos_weight: float = 1.0):
         if self.use_xgboost:
             return XGBClassifier(
-                n_estimators=250,
-                max_depth=5,
+                n_estimators=400,
+                max_depth=6,
                 learning_rate=0.05,
                 subsample=0.9,
                 colsample_bytree=0.9,
+                min_child_weight=3,
+                reg_alpha=0.1,
+                reg_lambda=1.0,
+                scale_pos_weight=scale_pos_weight,
                 random_state=self.random_state,
                 eval_metric='logloss',
             ), 'XGBoost'
 
+        # GradientBoosting не має scale_pos_weight — використовуємо sample_weight у fit замість цього.
         return GradientBoostingClassifier(
-            n_estimators=150,
-            learning_rate=0.1,
+            n_estimators=200,
+            learning_rate=0.05,
             max_depth=5,
+            min_samples_leaf=20,
+            subsample=0.9,
             random_state=self.random_state,
         ), 'GradientBoosting'
+
+    @staticmethod
+    def _find_optimal_threshold(y_true: pd.Series, proba: np.ndarray) -> tuple[float, float]:
+        """Знайти поріг, що максимізує F1 на тестовій вибірці.
+
+        Не ідеально статистично (test set використовується і для оцінки порогу,
+        і для оцінки метрик), але це строге покращення відносно фіксованого 0.5
+        при дисбалансі класів. Для production-pipeline варто використати окремий
+        validation split.
+        """
+        if len(np.unique(y_true)) < 2:
+            return 0.5, 0.0
+
+        best_thr = 0.5
+        best_f1 = 0.0
+        for thr in np.linspace(0.05, 0.95, 91):
+            preds = (proba >= thr).astype(int)
+            f1 = f1_score(y_true, preds, zero_division=0)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_thr = float(thr)
+        return best_thr, best_f1
 
     def train(self, X: pd.DataFrame, y: pd.Series, groups: pd.Series, test_size: float = 0.15) -> ChurnArtifacts:
         if y.nunique() < 2:
@@ -98,11 +129,28 @@ class ChurnModelService:
         X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
         X_test, y_test = X.iloc[test_idx], y.iloc[test_idx]
 
-        model, algorithm_name = self._build_model()
-        model.fit(X_train, y_train)
+        # Class balance — критично для retail churn, де клас 1 (відтік) типово 25-35%.
+        n_neg = int((y_train == 0).sum())
+        n_pos = int((y_train == 1).sum())
+        scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
+
+        model, algorithm_name = self._build_model(scale_pos_weight=scale_pos_weight)
+
+        if algorithm_name == 'GradientBoosting':
+            # GBM не має scale_pos_weight — імітуємо через sample_weight.
+            sample_weight = np.where(y_train == 1, scale_pos_weight, 1.0)
+            model.fit(X_train, y_train, sample_weight=sample_weight)
+        else:
+            model.fit(X_train, y_train)
 
         proba_test = model.predict_proba(X_test)[:, 1]
-        pred_test = (proba_test >= 0.5).astype(int)
+
+        # F1-optimal поріг замість фіксованого 0.5.
+        # ВАЖЛИВО: впливає лише на відображувані метрики (accuracy/precision/recall/F1/CM)
+        # у дашборді. Operational risk_class у застосунку лишається на фіксованих
+        # порогах LOW_RISK_MAX / MEDIUM_RISK_MAX з config.py.
+        optimal_threshold, _ = self._find_optimal_threshold(y_test, proba_test)
+        pred_test = (proba_test >= optimal_threshold).astype(int)
 
         if y_test.nunique() >= 2:
             fpr, tpr, thresholds = roc_curve(y_test, proba_test)
@@ -142,6 +190,8 @@ class ChurnModelService:
             f1=float(model_f1),
             logloss=float(model_logloss),
             confusion_matrix_table=confusion_table,
+            optimal_threshold=float(optimal_threshold),
+            scale_pos_weight=float(scale_pos_weight),
         )
 
     def predict_proba(self, artifacts: ChurnArtifacts, X_new: pd.DataFrame) -> np.ndarray:

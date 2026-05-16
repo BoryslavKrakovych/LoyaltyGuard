@@ -598,6 +598,10 @@ def build_training_matrices(
         'recommended_channel',
         'top_categories',
         'dominant_category',
+        # days_since_last_purchase = snapshot_date - customer.max(date) — це LOOKAHEAD
+        # для forward-looking churn dataset: для старої транзакції T значення вже знає,
+        # коли клієнт зробив останню покупку (в майбутньому відносно T). Тому виключаємо.
+        # Point-in-time recency живе в days_since_prev_purchase (gap до попередньої).
         'days_since_last_purchase',
         'days_to_next_purchase',
         'has_full_horizon',

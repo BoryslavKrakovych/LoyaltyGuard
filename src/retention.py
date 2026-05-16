@@ -330,19 +330,21 @@ def estimate_campaign_effect(
         errors='coerce',
     ).fillna(0).clip(0, 1)
 
-    # Positive business changes should reduce churn risk.
-    freq_change_pct = min(max(float(freq_change_pct), 0.0), 0.15)
+    # Симетричні діапазони: будь-який зсув в обидва боки впливає.
+    # Позитивні зміни → churn падає; негативні → churn росте.
+    freq_change_pct = min(max(float(freq_change_pct), -0.50), 0.50)
     ticket_change_pct = min(max(float(ticket_change_pct), -0.50), 0.50)
-    promo_change_pct = min(max(float(promo_change_pct), 0.0), 0.10)
+    promo_change_pct = min(max(float(promo_change_pct), -0.50), 0.50)
 
-    reduction = (
-        0.20 * freq_change_pct
-        + 0.25 * max(ticket_change_pct, 0.0)
-        + 0.10 * promo_change_pct
+    # Коефіцієнти підібрано так, щоб +50% по всіх трьох слайдерах давало
+    # ~50% редукції churn-у, а зворотний рух — відповідний приріст.
+    effect = (
+        0.40 * freq_change_pct      # частота — найсильніший фактор
+        + 0.35 * ticket_change_pct  # середній чек
+        + 0.25 * promo_change_pct   # реакція на промо
     )
-    increase = 0.18 * max(-ticket_change_pct, 0.0)
 
-    new_prob = (base_prob * (1.0 - reduction + increase)).clip(0, 1)
+    new_prob = (base_prob * (1.0 - effect)).clip(0, 1)
 
     details = pd.DataFrame({
         'customer_id': work['customer_id'].astype(str),

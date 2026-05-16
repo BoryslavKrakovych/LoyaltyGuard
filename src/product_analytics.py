@@ -192,8 +192,12 @@ def train_word2vec(products: pd.DataFrame, vector_size: int = 50) -> Optional[Wo
     model = Word2Vec(
         sentences=sentences,
         vector_size=vector_size,
-        window=5,
-        min_count=1,
+        # Назви товарів короткі (3-7 токенів). window=5 ефективно ловив весь рядок,
+        # знищуючи локальний контекст. window=3 даєть кращі сусідства.
+        window=3,
+        # min_count=1 залишав однократні слова (шум, друкарські помилки).
+        # min_count=2 фільтрує hapax legomena, що значно знижує розмір словника та шум.
+        min_count=2,
         workers=1,
         seed=RANDOM_STATE,
     )
@@ -280,9 +284,19 @@ def cluster_products(products: pd.DataFrame, model: Optional[Word2Vec], n_cluste
 
     vectors = np.vstack([average_vector(tokens, model) for tokens in tokens_list])
 
-    n_clusters = max(2, min(n_clusters, len(prepared)))
+    # Захист від виродженого випадку: якщо більшість векторів — нулі (товари
+    # без розпізнаних токенів через min_count=2), KMeans лягає в одну точку.
+    # Беремо лише ненульові вектори для оцінки, а решту відносимо в "Інше".
+    nonzero_mask = ~(vectors == 0).all(axis=1)
+    n_meaningful = int(nonzero_mask.sum())
+    if n_meaningful < max(n_clusters, 4):
+        return pd.DataFrame()
+
+    n_clusters = max(2, min(n_clusters, n_meaningful))
     kmeans = KMeans(n_clusters=n_clusters, random_state=RANDOM_STATE, n_init=10)
-    prepared['semantic_cluster'] = kmeans.fit_predict(vectors)
+    # Тренуємо kmeans тільки на ненульових, але призначаємо для всіх
+    kmeans.fit(vectors[nonzero_mask])
+    prepared['semantic_cluster'] = kmeans.predict(vectors)
 
     pca = PCA(n_components=2, random_state=RANDOM_STATE)
     coords = pca.fit_transform(vectors)

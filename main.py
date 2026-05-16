@@ -682,8 +682,63 @@ def build_campaign_table(
     return work[columns].sort_values(by='churn_probability_percent', ascending=False).reset_index(drop=True)
 
 
+def build_feedback_campaign_table(audience: pd.DataFrame, campaign_name: str) -> pd.DataFrame:
+    """Побудувати таблицю кампанії, ВИКОРИСТОВУЮЧИ рекомендації feedback-моделі.
+
+    На відміну від build_campaign_table, тут НЕ перетираємо recommended_action /
+    recommended_channel / discount_pct, які вже поставив attach_feedback_recommendations().
+    Це і є суть feedback-aware кампанії: знижка масштабується від P(response),
+    канал залежить від ризику І від ймовірності реакції, текст оферу включає
+    P(response) та dynamic discount %.
+    """
+    if audience is None or audience.empty:
+        return pd.DataFrame(columns=[
+            'campaign_name', 'customer_id', 'churn_probability_percent', 'risk_class',
+            'campaign_category', 'discount_pct', 'response_prob_pct',
+            'offer_type', 'recommended_action', 'recommended_channel',
+        ])
+
+    work = audience.copy()
+    work['campaign_name'] = campaign_name
+
+    # recommended_message з feedback_model.build_offer_vector() містить готовий
+    # текст оферу зі знижкою та категорією — він і стає recommended_action.
+    if 'recommended_message' in work.columns:
+        work['recommended_action'] = work['recommended_message']
+
+    # campaign_category вже виставлена у викликача (= best_category).
+    # Якщо ні — fallback на best_category або dominant_category_display.
+    if 'campaign_category' not in work.columns:
+        if 'best_category' in work.columns:
+            work['campaign_category'] = work['best_category']
+        elif 'dominant_category_display' in work.columns:
+            work['campaign_category'] = work['dominant_category_display']
+        else:
+            work['campaign_category'] = 'General Merchandise'
+
+    columns = [
+        'campaign_name',
+        'customer_id',
+        'churn_probability_percent',
+        'risk_class',
+        'rfm_segment',
+        'customer_cluster_name',
+        'campaign_category',
+        'top_categories_ranked',
+        'response_prob_pct',
+        'discount_pct',
+        'offer_type',
+        'recommended_action',
+        'recommended_channel',
+        'top_categories_display',
+    ]
+    columns = [col for col in columns if col in work.columns]
+
+    return work[columns].sort_values(by='churn_probability_percent', ascending=False).reset_index(drop=True)
+
+
 @st.cache_data(
-    show_spinner='🔄 Навчання моделі...',
+    show_spinner=False,  # динамічний спінер виставляється у місці виклику (див. main())
     hash_funcs={
         # Hash DataFrames by shape + column names + first/last rows checksum
         'pandas.core.frame.DataFrame': lambda df: (
@@ -850,7 +905,13 @@ def finish_chart(fig) -> None:
     plt.close(fig)
 
 
-def dark_table(data, hide_index: bool = True, height: int = 360) -> None:
+def dark_table(data, hide_index: bool = True, height: int | None = 360) -> None:
+    """Рендерить DataFrame у нашому темному/світлому стилі.
+
+    height=None або 0 → жодного max-height (таблиця розгортається повністю,
+    сторінка прокручується). Корисно для фінальних таблиць (кампанія, rescue queue).
+    height=int    → обмежена висота з внутрішнім скролом (для preview/малих таблиць).
+    """
     df = pd.DataFrame(data)
 
     if df.empty:
@@ -862,9 +923,10 @@ def dark_table(data, hide_index: bool = True, height: int = 360) -> None:
         escape=True,
     )
 
+    height_style = f'max-height:{height}px;' if height else ''
     st.markdown(
         f'''
-        <div class="dark-table-box" style="max-height:{height}px;">
+        <div class="dark-table-box" style="{height_style}">
             {table_html}
         </div>
         ''',
@@ -1772,6 +1834,29 @@ def main():
         req_cols = ['customer_id', 'transaction_date', 'transaction_id', 'product_id', 'product_name']
         opt_cols = [c for c in CANONICAL_TRANSACTION_COLUMNS if c not in req_cols]
 
+        def _sample_caption(source_col: str) -> str:
+            """Show first 3 non-null values of selected source column, або '—' якщо нічого."""
+            if not source_col or source_col not in raw_df.columns:
+                return '—'
+            try:
+                samples = (
+                    raw_df[source_col]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .replace('', pd.NA)
+                    .dropna()
+                    .head(3)
+                    .tolist()
+                )
+            except Exception:
+                return '—'
+            if not samples:
+                return '—'
+            # Обрізаємо довгі значення, щоб caption не розпухав
+            samples = [s if len(s) <= 24 else s[:21] + '…' for s in samples]
+            return 'Приклад: ' + ', '.join(samples)
+
         st.markdown('**Обов\'язкові поля**')
         req_grid = st.columns(len(req_cols))
         for idx, canonical_name in enumerate(req_cols):
@@ -1779,12 +1864,14 @@ def main():
             default_col = loaded_template.get(canonical_name) or detected_mapping.get(canonical_name, '')
             default_index = column_options.index(default_col) if default_col in column_options else 0
             with req_grid[idx]:
-                manual_mapping[canonical_name] = st.selectbox(
+                selected = st.selectbox(
                     label,
                     column_options,
                     index=default_index,
                     key=f'mapping_{canonical_name}',
                 )
+                manual_mapping[canonical_name] = selected
+                st.caption(_sample_caption(selected))
 
         st.markdown('**Додаткові поля**')
         opt_grid = st.columns(min(len(opt_cols), 4))
@@ -1793,12 +1880,14 @@ def main():
             default_col = loaded_template.get(canonical_name) or detected_mapping.get(canonical_name, '')
             default_index = column_options.index(default_col) if default_col in column_options else 0
             with opt_grid[idx % 4]:
-                manual_mapping[canonical_name] = st.selectbox(
+                selected = st.selectbox(
                     label,
                     column_options,
                     index=default_index,
                     key=f'mapping_{canonical_name}',
                 )
+                manual_mapping[canonical_name] = selected
+                st.caption(_sample_caption(selected))
 
         save_col, _ = st.columns([2, 6])
         with save_col:
@@ -1877,13 +1966,19 @@ def main():
     if _cached is not None and _cached.get('key') == _cache_key:
         state = _cached['state']
     else:
+        # Динамічний текст: відповідає реальному режиму, не вводить в оману.
+        if saved_churn_artifacts is not None:
+            _spinner_text = '🔄 Завантаження моделі та підготовка даних...'
+        else:
+            _spinner_text = '🔄 Навчання моделі та підготовка даних...'
         try:
-            state = build_app_state(
-                raw_df=raw_df,
-                source_name=source_name,
-                manual_mapping=manual_mapping,
-                _saved_churn_artifacts=saved_churn_artifacts,
-            )
+            with st.spinner(_spinner_text):
+                state = build_app_state(
+                    raw_df=raw_df,
+                    source_name=source_name,
+                    manual_mapping=manual_mapping,
+                    _saved_churn_artifacts=saved_churn_artifacts,
+                )
             st.session_state['_app_state_cache'] = {'key': _cache_key, 'state': state}
         except Exception as error:
             st.error(str(error))
@@ -1903,11 +1998,9 @@ def main():
     X_all = state['X_all']
 
     page_options = [
-        '1. Overview',
-        '2. Churn & RFM',
-        '3. Categories',
-        '4. Campaign builder',
-        '5. EDA: WordCloud & Word2Vec'
+        'Overview',
+        'Campaign builder',
+        'EDA'
     ]
 
     if st.session_state.get('active_page') not in page_options:
@@ -1921,7 +2014,7 @@ def main():
         label_visibility='collapsed',
     )
 
-    if active_page == '1. Overview':
+    if active_page == 'Overview':
         st.markdown('### Огляд')
         c1, c2, c3 = st.columns(3)
 
@@ -2025,7 +2118,7 @@ def main():
         download_dataframe_button(cluster_stats, 'cluster_statistics.csv', 'Завантажити статистику по кластерах')
 
         st.markdown('### ТОП-10 активних клієнтів з найвищим ризиком')
-        dark_table(top_risk_active, hide_index=True, height=360)
+        dark_table(top_risk_active, hide_index=True, height=None)
         download_dataframe_button(top_risk_active, 'top_risk_active.csv', 'Завантажити TOP-10')
 
         if feedback_file is not None:
@@ -2198,140 +2291,140 @@ def main():
             else:
                 st.write('Додаткових нотаток немає.')
 
-    elif active_page == '2. Churn & RFM':
-        st.markdown('### 📊 Churn-модель: метрики')
+    # elif active_page == '2. Churn & RFM':
+    #     st.markdown('### 📊 Churn-модель: метрики')
+    #
+    #     def _stat_card(col, label, value, hint='', color='#7c9fe6'):
+    #         with col:
+    #             _bg = '#ffffff' if not _dark else '#1a1e2e'
+    #             _border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
+    #             _text = '#000000' if not _dark else '#4a5580'
+    #             _value = '#000000' if not _dark else color
+    #             st.markdown(
+    #                 f'<div style="background:{_bg};border-radius:10px;padding:16px 14px;'
+    #                 f'text-align:center;border:1px solid {_border};margin-bottom:8px">'
+    #                 f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;'
+    #                 f'color:{_text};margin-bottom:6px">{label}</div>'
+    #                 f'<div style="font-size:38px;font-weight:800;color:{_value};line-height:1.1">{value}</div>'
+    #                 f'<div style="font-size:11px;color:{_text};margin-top:4px">{hint}</div>'
+    #                 f'</div>',
+    #                 unsafe_allow_html=True,
+    #             )
+    #
+    #     def _fmt4(v):
+    #         try:
+    #             f = float(v)
+    #             return f'{f:.4f}'
+    #         except Exception:
+    #             return 'n/a'
+    #
+    #     _ca = churn_artifacts
+    #     _auc  = getattr(_ca, 'roc_auc',   float('nan'))
+    #     _acc  = getattr(_ca, 'accuracy',   float('nan'))
+    #     _prec = getattr(_ca, 'precision',  float('nan'))
+    #     _rec  = getattr(_ca, 'recall',     float('nan'))
+    #     _f1   = getattr(_ca, 'f1',         float('nan'))
+    #     _ll   = getattr(_ca, 'logloss',    float('nan'))
+    #     _algo = getattr(_ca, 'algorithm_name', 'n/a')
+    #     _nt   = len(getattr(_ca, 'test_index', []))
+    #
+    #     # Row 1 — primary metrics
+    #     _r1 = st.columns(4)
+    #     _stat_card(_r1[0], 'ROC-AUC',  _fmt4(_auc),  'де 0.5 = випадково', '#7c9fe6')
+    #     _stat_card(_r1[1], 'Accuracy', _fmt4(_acc),  f'Test rows: {_nt}',             '#a78bfa')
+    #     _stat_card(_r1[2], 'F1-score', _fmt4(_f1),   'Prec / Rec баланс',          '#34d399')
+    #     _stat_card(_r1[3], 'LogLoss',  _fmt4(_ll),   'нижче = краще',                    '#fbbf24')
+    #
+    #     # Row 2 — secondary metrics
+    #     _r2 = st.columns(4)
+    #     _stat_card(_r2[0], 'Precision', _fmt4(_prec), 'TP / (TP+FP)', '#38bdf8')
+    #     _stat_card(_r2[1], 'Recall',    _fmt4(_rec),  'TP / (TP+FN)', '#38bdf8')
+    #     _stat_card(_r2[2], 'Алгоритм',    _algo,         '',              '#e8eaf0')
+    #     _stat_card(_r2[3], 'Test rows', str(_nt),     'рядків в тестовій вибірці', '#e8eaf0')
+    #
+    #     st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+    #
+    #     # ROC + Confusion side by side
+    #     _rcol, _ccol = st.columns([3, 2])
+    #     with _rcol:
+    #         st.markdown('#### ROC-крива')
+    #         plot_roc_curve(_ca.fpr, _ca.tpr, _ca.roc_auc)
+    #     with _ccol:
+    #         st.markdown('#### Confusion Matrix')
+    #         _cm = getattr(_ca, 'confusion_matrix_table', None)
+    #         if _cm is not None:
+    #             dark_table(_cm, hide_index=False, height=260)
+    #             _tn = int(_cm.iloc[0, 0]); _fp = int(_cm.iloc[0, 1])
+    #             _fn = int(_cm.iloc[1, 0]); _tp = int(_cm.iloc[1, 1])
+    #             _cm_bg = '#ffffff' if not _dark else '#1a1e2e'
+    #             _cm_text = '#000000' if not _dark else '#8891aa'
+    #             _cm_border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
+    #             _cm_mark = '#000000' if not _dark else None
+    #             st.markdown(
+    #                 f'<div style="background:{_cm_bg};border-radius:10px;padding:10px 14px;'
+    #                 f'font-size:13px;color:{_cm_text};margin-top:8px;border:1px solid {_cm_border}">'
+    #                 f'<b style="color:{_cm_mark or "#34d399"}">TP</b> {_tp}  '
+    #                 f'<b style="color:{_cm_mark or "#34d399"}">TN</b> {_tn}  '
+    #                 f'<b style="color:{_cm_mark or "#f87171"}">FP</b> {_fp}  '
+    #                 f'<b style="color:{_cm_mark or "#fbbf24"}">FN</b> {_fn}'
+    #                 f'</div>',
+    #                 unsafe_allow_html=True,
+    #             )
+    #
+    #     with st.expander('📊 Важливість ознак (Top-20)'):
+    #         importance_plot = feature_importance.head(20).copy()
+    #
+    #         if importance_plot.empty:
+    #             st.info('Немає даних для графіка важливості ознак.')
+    #         else:
+    #             feature_col = importance_plot.columns[0]
+    #             importance_col = importance_plot.columns[-1]
+    #
+    #             importance_plot[importance_col] = pd.to_numeric(
+    #                 importance_plot[importance_col],
+    #                 errors='coerce'
+    #             ).fillna(0)
+    #
+    #             importance_plot = importance_plot.sort_values(
+    #                 by=importance_col,
+    #                 ascending=True
+    #             )
+    #
+    #             fig, ax = plt.subplots(figsize=(10, 7))
+    #
+    #             ax.barh(
+    #                 importance_plot[feature_col].astype(str),
+    #                 importance_plot[importance_col],
+    #                 color=CHART_COLORS[0]
+    #             )
+    #
+    #             ax.set_title('Важливість ознак моделі')
+    #             ax.set_xlabel('Важливість')
+    #             ax.set_ylabel('Ознака')
+    #             ax.grid(axis='x', alpha=0.3)
+    #
+    #             for i, value in enumerate(importance_plot[importance_col]):
+    #                 ax.text(
+    #                     value,
+    #                     i,
+    #                     f' {value:.4f}',
+    #                     va='center',
+    #                     fontsize=9
+    #                 )
+    #
+    #             fig.tight_layout()
+    #             finish_chart(fig)
+    #
+    #     st.markdown('### 📋 RFM-сегменти')
+    #     _rfm_s = state['rfm_counts'].set_index('rfm_segment')['customers']
+    #     plot_horizontal_counts(_rfm_s, 'RFM-сегменти', 'Кількість клієнтів', 'Сегмент')
+    #
+    #     st.markdown('### RFM-таблиця')
+    #     dark_table(rfm.head(50), hide_index=True, height=None)
+    #     download_dataframe_button(rfm, 'rfm_table.csv', 'Завантажити RFM таблицю')
 
-        def _stat_card(col, label, value, hint='', color='#7c9fe6'):
-            with col:
-                _bg = '#ffffff' if not _dark else '#1a1e2e'
-                _border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
-                _text = '#000000' if not _dark else '#4a5580'
-                _value = '#000000' if not _dark else color
-                st.markdown(
-                    f'<div style="background:{_bg};border-radius:10px;padding:16px 14px;'
-                    f'text-align:center;border:1px solid {_border};margin-bottom:8px">'
-                    f'<div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;'
-                    f'color:{_text};margin-bottom:6px">{label}</div>'
-                    f'<div style="font-size:38px;font-weight:800;color:{_value};line-height:1.1">{value}</div>'
-                    f'<div style="font-size:11px;color:{_text};margin-top:4px">{hint}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-        def _fmt4(v):
-            try:
-                f = float(v)
-                return f'{f:.4f}'
-            except Exception:
-                return 'n/a'
-
-        _ca = churn_artifacts
-        _auc  = getattr(_ca, 'roc_auc',   float('nan'))
-        _acc  = getattr(_ca, 'accuracy',   float('nan'))
-        _prec = getattr(_ca, 'precision',  float('nan'))
-        _rec  = getattr(_ca, 'recall',     float('nan'))
-        _f1   = getattr(_ca, 'f1',         float('nan'))
-        _ll   = getattr(_ca, 'logloss',    float('nan'))
-        _algo = getattr(_ca, 'algorithm_name', 'n/a')
-        _nt   = len(getattr(_ca, 'test_index', []))
-
-        # Row 1 — primary metrics
-        _r1 = st.columns(4)
-        _stat_card(_r1[0], 'ROC-AUC',  _fmt4(_auc),  'де 0.5 = випадково', '#7c9fe6')
-        _stat_card(_r1[1], 'Accuracy', _fmt4(_acc),  f'Test rows: {_nt}',             '#a78bfa')
-        _stat_card(_r1[2], 'F1-score', _fmt4(_f1),   'Prec / Rec баланс',          '#34d399')
-        _stat_card(_r1[3], 'LogLoss',  _fmt4(_ll),   'нижче = краще',                    '#fbbf24')
-
-        # Row 2 — secondary metrics
-        _r2 = st.columns(4)
-        _stat_card(_r2[0], 'Precision', _fmt4(_prec), 'TP / (TP+FP)', '#38bdf8')
-        _stat_card(_r2[1], 'Recall',    _fmt4(_rec),  'TP / (TP+FN)', '#38bdf8')
-        _stat_card(_r2[2], 'Алгоритм',    _algo,         '',              '#e8eaf0')
-        _stat_card(_r2[3], 'Test rows', str(_nt),     'рядків в тестовій вибірці', '#e8eaf0')
-
-        st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
-
-        # ROC + Confusion side by side
-        _rcol, _ccol = st.columns([3, 2])
-        with _rcol:
-            st.markdown('#### ROC-крива')
-            plot_roc_curve(_ca.fpr, _ca.tpr, _ca.roc_auc)
-        with _ccol:
-            st.markdown('#### Confusion Matrix')
-            _cm = getattr(_ca, 'confusion_matrix_table', None)
-            if _cm is not None:
-                dark_table(_cm, hide_index=False, height=260)
-                _tn = int(_cm.iloc[0, 0]); _fp = int(_cm.iloc[0, 1])
-                _fn = int(_cm.iloc[1, 0]); _tp = int(_cm.iloc[1, 1])
-                _cm_bg = '#ffffff' if not _dark else '#1a1e2e'
-                _cm_text = '#000000' if not _dark else '#8891aa'
-                _cm_border = '#d9d9d9' if not _dark else 'rgba(255,255,255,0.07)'
-                _cm_mark = '#000000' if not _dark else None
-                st.markdown(
-                    f'<div style="background:{_cm_bg};border-radius:10px;padding:10px 14px;'
-                    f'font-size:13px;color:{_cm_text};margin-top:8px;border:1px solid {_cm_border}">'
-                    f'<b style="color:{_cm_mark or "#34d399"}">TP</b> {_tp}  '
-                    f'<b style="color:{_cm_mark or "#34d399"}">TN</b> {_tn}  '
-                    f'<b style="color:{_cm_mark or "#f87171"}">FP</b> {_fp}  '
-                    f'<b style="color:{_cm_mark or "#fbbf24"}">FN</b> {_fn}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-        with st.expander('📊 Важливість ознак (Top-20)'):
-            importance_plot = feature_importance.head(20).copy()
-
-            if importance_plot.empty:
-                st.info('Немає даних для графіка важливості ознак.')
-            else:
-                feature_col = importance_plot.columns[0]
-                importance_col = importance_plot.columns[-1]
-
-                importance_plot[importance_col] = pd.to_numeric(
-                    importance_plot[importance_col],
-                    errors='coerce'
-                ).fillna(0)
-
-                importance_plot = importance_plot.sort_values(
-                    by=importance_col,
-                    ascending=True
-                )
-
-                fig, ax = plt.subplots(figsize=(10, 7))
-
-                ax.barh(
-                    importance_plot[feature_col].astype(str),
-                    importance_plot[importance_col],
-                    color=CHART_COLORS[0]
-                )
-
-                ax.set_title('Важливість ознак моделі')
-                ax.set_xlabel('Важливість')
-                ax.set_ylabel('Ознака')
-                ax.grid(axis='x', alpha=0.3)
-
-                for i, value in enumerate(importance_plot[importance_col]):
-                    ax.text(
-                        value,
-                        i,
-                        f' {value:.4f}',
-                        va='center',
-                        fontsize=9
-                    )
-
-                fig.tight_layout()
-                finish_chart(fig)
-
-        st.markdown('### 📋 RFM-сегменти')
-        _rfm_s = state['rfm_counts'].set_index('rfm_segment')['customers']
-        plot_horizontal_counts(_rfm_s, 'RFM-сегменти', 'Кількість клієнтів', 'Сегмент')
-
-        st.markdown('### RFM-таблиця')
-        dark_table(rfm.head(50), hide_index=True, height=420)
-        download_dataframe_button(rfm, 'rfm_table.csv', 'Завантажити RFM таблицю')
-
-    elif active_page == '3. Categories':
-        st.markdown('### Найчастіші категорії клієнтів')
+    # elif active_page == '3. Categories':
+    #     st.markdown('### Найчастіші категорії клієнтів')
         # c1, c2, c3 = st.columns(3)
         # metric_row(
         #     c1, 'Клієнтів із конкретною категорією, %', state['category_coverage_pct'],
@@ -2339,12 +2432,12 @@ def main():
         #     c3, 'Товарних рядків для автокатегоризації', len(state['products']),
         # )
 
-        chart_df = state['specific_category_counts'].copy()
-        if len(chart_df) == 0:
-            chart_df = state['category_counts'].copy()
-
-        _cat_s = chart_df.head(10).set_index('category')['customers']
-        plot_horizontal_counts(_cat_s, 'Топ категорій', 'Кількість клієнтів', 'Категорія')
+        # chart_df = state['specific_category_counts'].copy()
+        # if len(chart_df) == 0:
+        #     chart_df = state['category_counts'].copy()
+        #
+        # _cat_s = chart_df.head(10).set_index('category')['customers']
+        # plot_horizontal_counts(_cat_s, 'Топ категорій', 'Кількість клієнтів', 'Категорія')
 
         # st.markdown('### Узгоджений профіль категорій клієнтів')
         # dark_table(category_table.head(100), hide_index=True, height=420)
@@ -2355,7 +2448,7 @@ def main():
         #     preview_cols = [col for col in preview_cols if col in state['products'].columns]
         #     dark_table(state['products'][preview_cols].head(100), hide_index=True, height=420)
 
-    elif active_page == '4. Campaign builder':
+    elif active_page == 'Campaign builder':
         st.markdown('### Конструктор кампаній')
 
         # filter_col1, filter_col2 = st.columns(2)
@@ -2415,6 +2508,35 @@ def main():
         selected_cluster = 'All'
         only_active = True
 
+        # ── Кнопка-гейт: важка робота тільки після кліку ─────────────────────
+        # Стан кампанії живе в session_state і інвалідовується при зміні даних
+        # (data_hash) або наявності/відсутності feedback-файлу.
+        _campaign_signature = (
+            len(latest_customers),
+            id(churn_artifacts),
+            feedback_file.name if feedback_file is not None else None,
+            feedback_file.size if feedback_file is not None else 0,
+        )
+        if st.session_state.get('_campaign_signature') != _campaign_signature:
+            st.session_state['_campaign_built'] = False
+            st.session_state['_campaign_signature'] = _campaign_signature
+
+        _build_clicked = st.button(
+            '🚀 Побудувати кампанію',
+            type='primary',
+            help='Аналізує аудиторію, навчає feedback-модель (якщо файл завантажено) та формує таблицю.',
+        )
+        if _build_clicked:
+            st.session_state['_campaign_built'] = True
+
+        if not st.session_state.get('_campaign_built', False):
+            st.info(
+                'ℹ️ Натисніть **Побудувати кампанію**, щоб згенерувати таблицю. '
+                + ('Виявлено feedback-файл — буде навчена модель реакції.' if feedback_file is not None
+                   else 'Без feedback-файлу буде використана евристика по ризику.')
+            )
+            return  # вихід з main() — спінер не запускається
+
         audience = latest_customers.copy()
         # ── A. Train feedback response model (once per session) ─────────────────
         fb_artifacts = None
@@ -2444,20 +2566,21 @@ def main():
                     ):
                         fb_artifacts = _cached_feedback.get('artifacts')
                     else:
-                        X_fb, y_fb, groups_fb, fcols, ccols = prepare_feedback_training_set(
-                            feedback_df=_fb_raw,
-                            customer_features=latest_customers,
-                            categorizer=lambda t: categorize_product(t)[0],
-                            cid_col=cid_col,
-                            item_col=item_col,
-                            reaction_col=reaction_col,
-                        )
-                        fb_service = FeedbackResponseService(use_xgboost=True)
-                        fb_artifacts = fb_service.train(X_fb, y_fb, groups_fb, fcols, ccols)
-                        st.session_state['_feedback_response_cache'] = {
-                            'key': _feedback_cache_key,
-                            'artifacts': fb_artifacts,
-                        }
+                        with st.spinner('🔄 Навчання feedback-моделі реакції...'):
+                            X_fb, y_fb, groups_fb, fcols, ccols = prepare_feedback_training_set(
+                                feedback_df=_fb_raw,
+                                customer_features=latest_customers,
+                                categorizer=lambda t: categorize_product(t)[0],
+                                cid_col=cid_col,
+                                item_col=item_col,
+                                reaction_col=reaction_col,
+                            )
+                            fb_service = FeedbackResponseService(use_xgboost=True)
+                            fb_artifacts = fb_service.train(X_fb, y_fb, groups_fb, fcols, ccols)
+                            st.session_state['_feedback_response_cache'] = {
+                                'key': _feedback_cache_key,
+                                'artifacts': fb_artifacts,
+                            }
 
                     st.success(
                         f'✅ Feedback-модель навчена ({fb_artifacts.algorithm_name}). '
@@ -2472,34 +2595,29 @@ def main():
             except Exception as _err:
                 st.error(f'Помилка тренування feedback-моделі: {_err}')
 
-        # ── B. Build campaign WITH feedback-aware recommendations ──────────────
+        # ── B. Build campaign — feedback-aware гілка vs heuristic гілка ────────
         if fb_artifacts is not None and len(audience) > 0:
+            # FEEDBACK ГІЛКА: використовуємо повний vector з feedback-моделі
+            # (discount_pct, recommended_message, recommended_channel, response_prob_pct).
             audience = attach_feedback_recommendations(audience, fb_artifacts)
             audience['campaign_category'] = audience['best_category']
-
-        final_campaign = build_campaign_table(
-            audience=audience,
-            campaign_name=campaign_name,
-            offer_type=offer_type,
-            channel_mode=channel_mode,
-            category_mode=category_mode,
-            manual_category=manual_category,
-        )
-
-        if fb_artifacts is not None and 'best_category' in audience.columns:
-            fb_cols = [
-                'customer_id',
-                'best_category',
-                'top_categories_ranked',
-                'response_prob_pct',
-                'recommended_message',
-            ]
-            fb_cols = [col for col in fb_cols if col in audience.columns]
-            final_campaign = final_campaign.merge(
-                audience[fb_cols],
-                on='customer_id',
-                how='left',
+            final_campaign = build_feedback_campaign_table(audience, campaign_name)
+            # st.caption(
+            #     '🎯 Використано feedback-модель: знижка та канал масштабуються від '
+            #     'P(response), категорія обирається індивідуально на клієнта.'
+            # )
+        else:
+            # HEURISTIC ГІЛКА: discount/channel залежать лише від churn_probability.
+            final_campaign = build_campaign_table(
+                audience=audience,
+                campaign_name=campaign_name,
+                offer_type=offer_type,
+                channel_mode=channel_mode,
+                category_mode=category_mode,
+                manual_category=manual_category,
             )
+            # if feedback_file is None:
+            #     st.caption('ℹ️ Без feedback-файлу: discount/канал визначаються евристикою по ризику.')
 
         st.markdown(f'### \u0420\u043e\u0437\u043c\u0456\u0440 \u0430\u0443\u0434\u0438\u0442\u043e\u0440\u0456\u0457: {len(final_campaign)}')
 
@@ -2579,9 +2697,10 @@ def main():
             else:
                 st.info('\u041f\u0440\u043e\u043c\u043e-\u0430\u043a\u0442\u0438\u0432\u043d\u0456\u0441\u0442\u044c \u043d\u0435 \u0437\u043c\u0456\u043d\u044e\u0454\u0442\u044c\u0441\u044f')
 
+        # Симетричне передавання — обрізання робиться всередині estimate_campaign_effect.
         ticket_change = ticket_change_percent / 100
-        freq_change = min(max(freq_change_percent / 100, 0.0), 0.15)
-        promo_change = min(max(promo_change_percent / 100, 0.0), 0.10)
+        freq_change = freq_change_percent / 100
+        promo_change = promo_change_percent / 100
 
         if len(audience) == 0:
             st.info('За вибраними фільтрами аудиторія порожня.')
@@ -2611,7 +2730,7 @@ def main():
             # dark_table(effect_summary_display, hide_index=True, height=260)
 
             st.markdown('### Фінальна таблиця кампанії')
-            dark_table(final_campaign.head(audience_limit), hide_index=True, height=460)
+            dark_table(final_campaign.head(audience_limit), hide_index=True, height=None)
             download_dataframe_button(final_campaign, 'campaign_final.csv', 'Завантажити фінальну кампанію')
             # download_dataframe_button(effect_summary, 'campaign_effect_summary.csv', 'Завантажити оцінку ефекту')
 
@@ -2620,7 +2739,7 @@ def main():
             #     download_dataframe_button(effect_details, 'campaign_effect_details.csv', 'Завантажити деталі ефекту')
 
 
-    elif active_page == '5. EDA: WordCloud & Word2Vec':
+    elif active_page == 'EDA':
         render_eda_tab(state)
 
     # elif active_page == 'ℹ️ Про модель':
