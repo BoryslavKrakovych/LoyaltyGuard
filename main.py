@@ -1201,41 +1201,9 @@ def main():
     # Базова тема після першого запуску — темна.
     # Version flag потрібен, щоб після оновлення файлу Streamlit один раз
     # виставив темну тему навіть якщо у старій сесії залишився світлий стан.
-    if st.session_state.get('_theme_default_version') != 'dark-default-v1':
-        st.session_state['_theme_default_version'] = 'dark-default-v1'
-        st.session_state['dark_mode'] = True
-        st.session_state['theme_toggle'] = True
-
-    if 'dark_mode' not in st.session_state:
-        st.session_state['dark_mode'] = True
-
-    # Якщо toggle уже існує, спочатку синхронізуємо стан теми.
-    # Інакше після кліку текст toggle може показувати стару назву.
-    if 'theme_toggle' in st.session_state:
-        st.session_state['dark_mode'] = bool(st.session_state['theme_toggle'])
-
-    # ВАЖЛИВО: ніякого st.rerun() — зміна теми відбувається на наступному
-    # природному ре-рані (toggle сам тригерить ре-ран).  Це гарантує що
-    # @st.cache_data не інвалідується і модель / дані не перераховуються.
-    with st.sidebar:
-        _theme_cols = st.columns([1, 3])
-        with _theme_cols[0]:
-            st.markdown(
-                '<div style="margin-top:6px;font-size:20px;font-weight:800">'
-                + ('☾' if st.session_state['dark_mode'] else '☀')
-                + '</div>',
-                unsafe_allow_html=True,
-            )
-        with _theme_cols[1]:
-            st.session_state['dark_mode'] = st.toggle(
-                'Темна тема',
-                value=st.session_state['dark_mode'],
-                key='theme_toggle',
-            )
-
-    _dark = st.session_state['dark_mode']
+    # Ініціалізація базового стану теми при першому запуску
+    _dark = True
     _apply_mpl_theme(_dark)
-
     # ── CSS (light / dark) ────────────────────────────────────────────────────
     if _dark:
      _css = (
@@ -1315,82 +1283,7 @@ def main():
         '.dark-table-box tbody tr:hover td{background:#1a1e2e!important}\n'
         '</style>'
      )
-    else:
-     _css = (
-        '<style>\n'
-        '*,*::before,*::after{box-sizing:border-box!important;color-scheme:light!important}\n'
-        ':root{color-scheme:light!important}\n'
-        'html,body{color-scheme:light!important;background:#ffffff!important}\n'
-        '[data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"]{ background:#ffffff!important; border-bottom:1px solid #d9d9d9!important; }\n'
-        'html,body,.main,.block-container,[data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMainBlockContainer"],[data-testid="stVerticalBlock"],[data-testid="stBottom"],[class*="appview"],[class*="main"]{background-color:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
-        '[data-testid="stBottom"],[data-testid="stBottomBlockContainer"]{background:#ffffff!important;color-scheme:light!important}\n'
-        '[data-testid="stBottom"] *,[data-testid="stBottomBlockContainer"] *{background:transparent!important;color:#000000!important;color-scheme:light!important}\n'
-        '[data-testid="stStatusWidget"]{background:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
-        '[data-testid="stStatusWidget"] *{background:transparent!important;color:#000000!important;fill:#000000!important}\n'
-        'iframe{color-scheme:light!important;background:#ffffff!important}\n'
-        '[data-testid="stArrowVegaLiteChart"] iframe,[data-testid="stVegaLiteChart"] iframe{background:#ffffff!important;color-scheme:light!important}\n'
-        '[data-testid="stBarChart"],[data-testid="stLineChart"],[data-testid="stAreaChart"]{background:#ffffff!important;border-radius:10px!important;padding:8px!important;border:1px solid #d9d9d9!important;color-scheme:light!important}\n'
-        '[data-testid="stBarChart"] *,[data-testid="stLineChart"] *,[data-testid="stAreaChart"] *{background:#ffffff!important;color:#000000!important;color-scheme:light!important}\n'
-        'canvas{color-scheme:light!important;background:#ffffff!important}\n'
-        '[data-testid="stSidebar"],#stSidebar,section[data-testid="stSidebar"]{ background-color:#ffffff!important; border-right:1px solid #d9d9d9!important; }\n'
-        '[data-testid="stSidebar"] *, [data-testid="stSidebar"] label{ color:#000000!important; }\n'
-        'h1,h2,h3,h4,h5,h6,p,span,label,div,small,caption,li,button,summary,svg{color:#000000!important;fill:#000000!important}\n'
-        '[data-testid="stTabs"] [role="tablist"]{background:#ffffff!important;border-radius:10px!important;padding:4px!important;border:1px solid #d9d9d9!important}\n'
-        '[data-testid="stTabs"] button[role="tab"]{background:transparent!important;color:#000000!important;border-radius:7px!important;font-weight:600!important;font-size:13px!important;border:none!important}\n'
-        '[data-testid="stTabs"] button[role="tab"]:hover{color:#000000!important;background:#f2f2f2!important}\n'
-        '[data-testid="stTabs"] button[aria-selected="true"]{background:#eeeeee!important;color:#000000!important;font-weight:800!important}\n'
-        '[data-testid="stMetric"]{background:#ffffff!important;border-radius:10px!important;padding:14px 16px!important;border:1px solid #d9d9d9!important;box-shadow:none!important}\n'
-        '[data-testid="stMetricLabel"]{color:#000000!important;font-size:11px!important;text-transform:uppercase;letter-spacing:.8px}\n'
-        '[data-testid="stMetricValue"]{color:#000000!important;font-weight:800!important}\n'
-        '[data-testid="stButton"]>button,[data-testid="stDownloadButton"]>button{background:#ffffff!important;color:#000000!important;border:1px solid #000000!important;border-radius:8px!important;font-weight:700!important;box-shadow:none!important}\n'
-        '[data-testid="stButton"]>button:hover,[data-testid="stDownloadButton"]>button:hover{background:#f2f2f2!important;border-color:#000000!important;color:#000000!important;transform:none!important;box-shadow:none!important}\n'
-        '[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea{background:#ffffff!important;border:1px solid #000000!important;border-radius:8px!important;color:#000000!important}\n'
-        '[data-testid="stSelectbox"]>div>div,[data-testid="stSelectbox"] [role="listbox"],[data-testid="stSelectbox"] [role="option"],[data-baseweb="select"]>div,[data-baseweb="popover"] ul,[data-baseweb="popover"],[data-baseweb="menu"]{background:#ffffff!important;border:1px solid #000000!important;border-radius:8px!important;color:#000000!important}\n'
-        '[data-baseweb="option"]:hover,[data-baseweb="option"][aria-selected="true"]{background:#eeeeee!important;color:#000000!important}\n'
-        '[data-testid="stRadio"] label,[data-testid="stRadio"] div{color:#000000!important}\n'
-        '[data-testid="stFileUploader"],[data-testid="stFileUploader"] section,[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"],[data-testid="stFileUploadDropzone"]{background:#ffffff!important;border:1.5px dashed #000000!important;border-radius:10px!important;color:#000000!important}\n'
-        '[data-testid="stFileUploader"] *{color:#000000!important;background:transparent!important}\n'
-        '[data-testid="stAlert"],[data-baseweb="notification"]{border-radius:10px!important;border-left-width:3px!important;background:rgba(255,255,255,.95)!important}\n'
-        '[data-testid="stExpander"]{background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important}\n'
-        '[data-testid="stExpander"] summary{color:#000000!important;font-size:13px!important}\n'
-        '[data-testid="stDataFrame"],[data-testid="stDataFrame"]>div{background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important;overflow:hidden!important}\n'
-        '[data-testid="stDataFrame"],[data-testid="stDataFrame"] *{color:#000000!important;fill:#000000!important}\n'
-        '[data-testid="stDataFrame"] iframe{background:#ffffff!important;color-scheme:light!important}\n'
-        '.dvn-scroller,.gdg-cell,.gdg-header-cell,.glide-data-grid-svg{background:#ffffff!important;color:#000000!important;fill:#000000!important}\n'
-        '[data-testid="stDataFrame"] [role="columnheader"]{background:#eeeeee!important;color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important}\n'
-        '[data-testid="stDataFrame"] [role="gridcell"]{background:#ffffff!important;border-color:rgba(0,0,0,.05)!important}\n'
-        '[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"]{background:#f2f2f2!important}\n'
-        '[data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="gridcell"]{background:#fafafa!important}\n'
-        '[data-testid="stSlider"] [role="slider"]{background:#000000!important;border:2px solid #ffffff!important;box-shadow:none!important;width:22px!important;height:22px!important}\n'
-        '.whatif-scale{display:flex!important;justify-content:space-between!important;align-items:center!important;margin-top:6px!important;padding:0 4px!important}\n'
-        '.whatif-scale span{font-size:12px!important;font-weight:800!important}\n'
-        '.whatif-scale .whatif-min,.whatif-scale .whatif-zero,.whatif-scale .whatif-max,.whatif-scale .whatif-sep{color:#000000!important}\n'
-        '[data-testid="stCaptionContainer"] p{color:#000000!important}\n'
-        '[data-testid="stpyplot"]>div{background:#ffffff!important;border-radius:10px!important;padding:8px!important;border:1px solid #d9d9d9!important}\n'
-        '::-webkit-scrollbar{width:6px;height:6px}\n'
-        '::-webkit-scrollbar-track{background:#ffffff}\n'
-        '::-webkit-scrollbar-thumb{background:#000000;border-radius:3px}\n'
-        '::-webkit-scrollbar-thumb:hover{background:#333333}\n'
-        'hr{border-color:#d9d9d9!important}\n'
-        '[data-testid="stArrowVegaLiteChart"]>div,[data-testid="stVegaLiteChart"]>div{background:#ffffff!important;border-radius:10px!important;border:1px solid #d9d9d9!important;padding:8px!important}\n'
-        '[data-testid="stImage"] img{border-radius:10px!important;border:1px solid #d9d9d9!important}\n'
-        'table,thead,tbody,tr,th,td{background:#ffffff!important;color:#000000!important;border-color:#d9d9d9!important}\n'
-        'th{color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important}\n'
-        'small,caption,[data-testid="stCaptionContainer"] p{color:#000000!important}\n'
-        '[data-testid="stMarkdownContainer"] p,[data-testid="stMarkdownContainer"] li,[data-testid="stMarkdownContainer"] span{color:#000000!important}\n'
-        '[data-testid="stMarkdownContainer"] b,[data-testid="stMarkdownContainer"] strong{color:#000000!important}\n'
-        '.dark-table-box{width:100%!important;overflow:auto!important;background:#ffffff!important;border:1px solid #d9d9d9!important;border-radius:10px!important;margin:8px 0 16px 0!important;box-shadow:none!important}\n'
-        '.dark-table-box table{width:100%!important;border-collapse:collapse!important;background:#ffffff!important;color:#000000!important;font-size:13px!important}\n'
-        '.dark-table-box thead th{position:sticky!important;top:0!important;z-index:2!important;background:#eeeeee!important;color:#000000!important;font-weight:800!important;border-bottom:1px solid #d9d9d9!important;padding:8px 10px!important;text-align:left!important;white-space:nowrap!important}\n'
-        '.dark-table-box tbody td{background:#ffffff!important;color:#000000!important;border-bottom:1px solid #eeeeee!important;padding:8px 10px!important;text-align:left!important;white-space:nowrap!important}\n'
-        '.dark-table-box tbody tr:nth-child(even) td{background:#fafafa!important}\n'
-        '.dark-table-box tbody tr:hover td{background:#f2f2f2!important}\n'
-        'ul,ol,[data-testid="stMarkdownContainer"] ul,[data-testid="stMarkdownContainer"] ol{list-style:none!important;padding-left:0!important;margin-left:0!important}\n'
-        'ul li,ol li,[data-testid="stMarkdownContainer"] ul li,[data-testid="stMarkdownContainer"] ol li{list-style:none!important;background-image:none!important}\n'
-        'li::marker,[data-testid="stMarkdownContainer"] li::marker{content:""!important;color:transparent!important;font-size:0!important}\n'
-        'li::before,[data-testid="stMarkdownContainer"] li::before{content:none!important;display:none!important}\n'
-        '</style>'
-     )
+   
     # Додатковий фікс для компонентів Streamlit, які не повністю
     # перекриваються основним CSS: expander, spinner/status, selectbox popover,
     # file uploader, alerts. Це прибирає чорні артефакти у світлій темі.
@@ -1641,8 +1534,20 @@ def main():
         opacity: 0 !important;
         pointer-events: none !important;
     }
+                /* 8. Повністю блокуємо можливість згорнути сайдбар */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    section[data-testid="stSidebar"] button[kind="header"] {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        height: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
     </style>
     """, unsafe_allow_html=True)
+
     _title_color = '#000000' if not _dark else '#7c9fe6'
     _sub_color = '#000000' if not _dark else '#4a5580'
     st.markdown(
@@ -1659,87 +1564,31 @@ def main():
     with st.sidebar:
         st.header('Дані')
 
-        data_source = st.selectbox(
-            'Джерело даних',
-            ['Файл CSV/XLSX', 'База даних'],
+        # Одразу показуємо завантажувач без зайвих селектбоксів
+        transactions_file = st.file_uploader(
+            'Завантажте транзакції (CSV або XLSX)',
+            type=['csv', 'xlsx', 'xls'],
+            key='transactions_file',
         )
 
-        if data_source == 'Файл CSV/XLSX':
-            transactions_file = st.file_uploader(
-                'Завантажте CSV або XLSX',
-                type=['csv', 'xlsx', 'xls'],
-                key='transactions_file',
-            )
-
-            if transactions_file is not None:
-                try:
-                    raw_df = get_cached_dataframe(
-                        transactions_file.getvalue(),
-                        transactions_file.name,
-                    )
-                    source_name = transactions_file.name
-                    # Invalidate saved mapping if schema changed
-                    prev_cols = st.session_state.get('_prev_raw_columns')
-                    cur_cols = raw_df.columns.tolist()
-                    if prev_cols is not None and prev_cols != cur_cols:
-                        st.session_state.pop('loaded_mapping_template', None)
-                        st.session_state.pop('_mapping_auto_applied', None)
-                    st.session_state['_prev_raw_columns'] = cur_cols
-                except Exception as error:
-                    st.error(str(error))
-                    st.stop()
-        else:
-            connection_string = st.text_input(
-                'Connection string',
-                placeholder='postgresql+psycopg2://user:password@localhost:5432/dbname',
-                key='db_conn_str',
-            )
-
-            # --- Table browser ---
-            if st.button('Показати таблиці БД') and connection_string:
-                tables = list_database_tables(connection_string)
-                if tables:
-                    st.session_state['db_table_list'] = tables
-                    st.success(f'Знайдено {len(tables)} таблиць / view.')
-                else:
-                    st.warning('Не вдалося отримати список таблиць або БД порожня.')
-
-            db_tables = st.session_state.get('db_table_list', [])
-            if db_tables:
-                selected_table = st.selectbox('Таблиця / view', ['— вибрати —'] + db_tables)
-                default_query = (
-                    f'SELECT * FROM {selected_table} LIMIT 50000'
-                    if selected_table != '— вибрати —'
-                    else 'SELECT * FROM transactions LIMIT 50000'
+        if transactions_file is not None:
+            try:
+                raw_df = get_cached_dataframe(
+                    transactions_file.getvalue(),
+                    transactions_file.name,
                 )
-            else:
-                default_query = 'SELECT * FROM transactions LIMIT 50000'
-
-            sql_query = st.text_area(
-                'SQL-запит',
-                value=st.session_state.get('db_sql_query', default_query),
-                height=100,
-            )
-            st.session_state['db_sql_query'] = sql_query
-
-            if st.button('Зчитати дані з БД'):
-                try:
-                    fetched = load_table_from_database(connection_string, sql_query)
-                    prev_cols = st.session_state.get('_prev_raw_columns')
-                    cur_cols = fetched.columns.tolist()
-                    if prev_cols is not None and prev_cols != cur_cols:
-                        st.session_state.pop('loaded_mapping_template', None)
-                        st.session_state.pop('_mapping_auto_applied', None)
-                    st.session_state['_prev_raw_columns'] = cur_cols
-                    st.session_state['db_raw_df'] = fetched
-                    st.session_state['db_source_name'] = 'database_query'
-                    st.success(f'Зчитано {len(fetched):,} рядків.')
-                except Exception as error:
-                    st.error(str(error))
-                    st.stop()
-
-            raw_df = st.session_state.get('db_raw_df')
-            source_name = st.session_state.get('db_source_name', 'database_query')
+                source_name = transactions_file.name
+                
+                # Invalidate saved mapping if schema changed
+                prev_cols = st.session_state.get('_prev_raw_columns')
+                cur_cols = raw_df.columns.tolist()
+                if prev_cols is not None and prev_cols != cur_cols:
+                    st.session_state.pop('loaded_mapping_template', None)
+                    st.session_state.pop('_mapping_auto_applied', None)
+                st.session_state['_prev_raw_columns'] = cur_cols
+            except Exception as error:
+                st.error(str(error))
+                st.stop()
 
         feedback_file = st.file_uploader(
             'Зовнішній feedback кампаній',
@@ -1748,7 +1597,7 @@ def main():
         )
 
     if raw_df is None:
-        st.info('Спочатку завантажте CSV/XLSX або зчитайте дані з бази даних.')
+        st.info('Спочатку завантажте файл з транзакціями (CSV або XLSX).')
         st.stop()
 
     # ── Mapping section ────────────────────────────────────────────────────────
@@ -1757,36 +1606,22 @@ def main():
     all_templates = list_mapping_templates()
 
     # Template selector row (always visible, above expander)
-    tmpl_col1, tmpl_col2, tmpl_col3 = st.columns([3, 1, 2])
-    with tmpl_col1:
-        template_name = st.text_input(
-            'Назва шаблону маппінгу',
-            value=st.session_state.get('_template_name_input', 'default_company_mapping'),
-            key='_template_name_input',
-        )
-    with tmpl_col2:
-        if st.button('📂 Завантажити'):
-            loaded = load_mapping_template(template_name)
-            if loaded:
-                st.session_state['loaded_mapping_template'] = loaded
-                st.session_state['_mapping_auto_applied'] = False
-                st.success('Завантажено.')
-            else:
-                st.warning('Шаблон не знайдено.')
-    with tmpl_col3:
-        if all_templates:
-            quick_pick = st.selectbox(
-                'Або вибрати зі збережених',
-                ['—'] + all_templates,
-                key='_tmpl_quick_pick',
-            )
-            if quick_pick != '—' and quick_pick != st.session_state.get('_last_quick_pick'):
-                st.session_state['_last_quick_pick'] = quick_pick
-                loaded = load_mapping_template(quick_pick)
-                if loaded:
-                    st.session_state['loaded_mapping_template'] = loaded
-                    st.session_state['_template_name_input'] = quick_pick
-                    st.session_state['_mapping_auto_applied'] = False
+    # ── Завантаження шаблону маппінгу ──
+    st.markdown('**Завантажте збережений шаблон (.json) або залиште порожнім для автовизначення:**')
+    uploaded_map = st.file_uploader('Файл маппінгу', type=['json'], label_visibility='collapsed', key='map_uploader')
+    
+    if uploaded_map is not None and uploaded_map.name != st.session_state.get('_last_map_filename'):
+        import json
+        try:
+            loaded = json.loads(uploaded_map.getvalue().decode('utf-8'))
+            st.session_state['loaded_mapping_template'] = loaded
+            st.session_state['_template_name_to_save'] = uploaded_map.name.replace('.json', '')
+            st.session_state['_mapping_auto_applied'] = False
+            st.session_state['_last_map_filename'] = uploaded_map.name
+            st.success('Маппінг успішно завантажено!')
+            st.rerun()
+        except Exception as e:
+            st.error(f'Не вдалося прочитати JSON файл: {e}')
 
     loaded_template = st.session_state.get('loaded_mapping_template', {})
     schema_ok = template_matches_schema(loaded_template, raw_df.columns.tolist())
@@ -1799,12 +1634,12 @@ def main():
 
     if schema_ok:
         st.success(
-            '✅ Схема даних збігається з шаблоном — маппінг застосовано автоматично. '
+            'Схема даних збігається з шаблоном — маппінг застосовано автоматично. '
             'Розгорніть нижче, щоб переглянути або змінити.'
         )
 
     with st.expander(
-        '🗂 Перегляд колонок та маппінг' + ('' if mapping_needed else ' (застосовано автоматично)'),
+        'Перегляд колонок та маппінг' + ('' if mapping_needed else ' (застосовано автоматично)'),
         expanded=mapping_needed,
     ):
         # Column preview table with examples
@@ -1890,15 +1725,43 @@ def main():
                 )
                 manual_mapping[canonical_name] = selected
                 st.caption(_sample_caption(selected))
+        # ── Ізольований блок збереження файлу маппінгу на комп'ютер ──
+        @st.fragment
+        def render_download_mapping_block(mapping_data):
+            import json
+            
+            st.markdown('**Зберегти налаштований маппінг на комп\'ютер:**')
+            save_col1, save_col2 = st.columns([3, 5])
+            
+            with save_col1:
+                # Введення тексту тут тепер НЕ перемальовує всю сторінку!
+                file_base_name = st.text_input(
+                    'Назва файлу',
+                    value=st.session_state.get('_template_name_to_save', 'loyalty_mapping'),
+                    label_visibility='collapsed',
+                    placeholder='Назва шаблону...'
+                )
+                st.session_state['_template_name_to_save'] = file_base_name
+            
+            with save_col2:
+                # Формуємо правильну назву файлу з розширенням
+                clean_name = file_base_name.strip()
+                filename = f"{clean_name}.json" if not clean_name.endswith('.json') else clean_name
+                
+                # Конвертуємо наш словник маппінгу в JSON-рядок
+                json_string = json.dumps(mapping_data, ensure_ascii=False, indent=2)
+                
+                # Використовуємо download_button, який віддає файл локально без ре-рану
+                st.download_button(
+                    label='Скачати шаблон (.json)',
+                    data=json_string,
+                    file_name=filename,
+                    mime='application/json',
+                    use_container_width=True
+                )
 
-        save_col, _ = st.columns([2, 6])
-        with save_col:
-            if st.button('💾 Зберегти шаблон маппінгу'):
-                saved_path = save_mapping_template(template_name, manual_mapping)
-                st.session_state['loaded_mapping_template'] = manual_mapping.copy()
-                st.session_state['_mapping_auto_applied'] = True
-                st.success(f'Шаблон збережено: {saved_path.name}')
-
+        # Викликаємо фрагмент і передаємо йому поточний стан маппінгу
+        render_download_mapping_block(manual_mapping)
     # When schema matched and expander is collapsed, build mapping silently
     if not mapping_needed and 'manual_mapping' not in dir():
         manual_mapping = {
@@ -1908,26 +1771,30 @@ def main():
             )
             for canonical_name in CANONICAL_TRANSACTION_COLUMNS
         }
-
     with st.sidebar:
         st.header('Модель')
-        model_mode = st.radio(
-            'Режим моделі',
-            ['Навчити нову модель', 'Завантажити збережену модель'],
+        st.info('⚙️ Завантажте файл існуючої моделі (.pkl). Якщо поле порожнє — буде навчена нова модель.')
+        
+        uploaded_model = st.file_uploader(
+            'Оберіть файл моделі (.pkl)',
+            type=['pkl'],
+            label_visibility='collapsed',
+            key='model_uploader'
         )
 
     saved_churn_artifacts = None
-    if model_mode == 'Завантажити збережену модель':
-        if SAVED_CHURN_MODEL_PATH.exists():
-            saved_churn_artifacts = joblib.load(SAVED_CHURN_MODEL_PATH)
-            st.sidebar.success('Збережену модель завантажено.')
-        else:
-            st.sidebar.error('Збережену модель не знайдено. Спочатку навчіть і збережіть модель.')
+
+    if uploaded_model is not None:
+        import io
+        try:
+            # Читаємо модель прямо з байтів
+            saved_churn_artifacts = joblib.load(io.BytesIO(uploaded_model.getvalue()))
+            st.sidebar.success('Модель завантажено з файлу.')
+        except Exception as e:
+            st.sidebar.error(f'Помилка читання моделі: {e}')
             st.stop()
 
-    # ── Cache key: only retrain when data / mapping / model_mode actually change ──
-    # Важливо: не використовуємо id(raw_df), бо він змінюється після rerun Streamlit.
-    # Тому рух слайдера більше не створює новий ключ і не запускає навчання заново.
+    # ── Cache key: only retrain when data / mapping / uploaded model actually change ──
     import hashlib as _hl, json as _json
 
     _data_hash = f"{source_name}_{raw_df.shape}_{list(raw_df.columns)}"
@@ -1940,10 +1807,8 @@ def main():
         ).encode('utf-8')
     ).hexdigest()
 
-    if saved_churn_artifacts is not None and SAVED_CHURN_MODEL_PATH.exists():
-        _saved_model_hash = str(SAVED_CHURN_MODEL_PATH.stat().st_mtime_ns)
-    else:
-        _saved_model_hash = ''
+    # Хешуємо за наявністю завантаженого файлу моделі
+    _saved_model_hash = f"{uploaded_model.name}_{uploaded_model.size}" if uploaded_model is not None else "train_new"
 
     _cache_key = _hl.md5(
         (
@@ -1952,37 +1817,93 @@ def main():
             + _json.dumps(list(raw_df.columns), ensure_ascii=False)
             + _data_hash
             + _mapping_hash
-            + str(model_mode)
             + _saved_model_hash
         ).encode('utf-8')
     ).hexdigest()
 
+    # ── Єдина логіка запуску (навчання або завантаження) ──
+    if st.session_state.get('_model_signature') != _cache_key:
+        st.session_state['_model_built'] = False
+        st.session_state['_model_signature'] = _cache_key
+
     _cached = st.session_state.get('_app_state_cache')
+    
     if _cached is not None and _cached.get('key') == _cache_key:
         state = _cached['state']
     else:
-        # Динамічний текст: відповідає реальному режиму, не вводить в оману.
+        # Визначаємо тексти залежно від режиму
         if saved_churn_artifacts is not None:
-            _spinner_text = '🔄 Завантаження моделі та підготовка даних...'
+            prompt_msg = 'ℹ️ Файл моделі готовий. Натисніть кнопку, щоб застосувати її та згенерувати дашборд.'
+            btn_text = '⚙️ Застосувати збережену модель'
+            spinner_text = '🔄 Розрахунок метрик та підготовка даних...'
         else:
-            _spinner_text = '🔄 Навчання моделі та підготовка даних...'
+            prompt_msg = '📋 Дані та маппінг готові. Натисніть кнопку нижче, щоб розпочати навчання моделі XGBoost.'
+            btn_text = '🚀 Розпочати навчання моделі'
+            spinner_text = '🔄 Навчання моделі та розрахунок метрик (це може зайняти деякий час)...'
+
+        _build_model_clicked = st.button(btn_text, type='primary', use_container_width=True)
+        
+        if _build_model_clicked:
+            st.session_state['_model_built'] = True
+
+        if not st.session_state.get('_model_built', False):
+            st.info(prompt_msg)
+            st.stop()
+            
         try:
-            with st.spinner(_spinner_text):
-                state = build_app_state(
+            with st.spinner(spinner_text):
+                new_state = build_app_state(
                     raw_df=raw_df,
                     source_name=source_name,
                     manual_mapping=manual_mapping,
                     _saved_churn_artifacts=saved_churn_artifacts,
                 )
-            st.session_state['_app_state_cache'] = {'key': _cache_key, 'state': state}
+            st.session_state['_app_state_cache'] = {'key': _cache_key, 'state': new_state}
+            st.rerun()
         except Exception as error:
             st.error(str(error))
+            # Якщо сталася помилка, скидаємо статус, щоб користувач міг спробувати знову
+            st.session_state['_model_built'] = False
             st.stop()
 
     with st.sidebar:
-        if st.button('Зберегти поточну модель'):
-            joblib.dump(state['churn_artifacts'], SAVED_CHURN_MODEL_PATH)
-            st.success('Модель збережено.')
+        # ── Ізольований блок збереження файлу моделі (.pkl) на комп'ютер ──
+        @st.fragment
+        def render_download_model_block(model_artifacts):
+            import io
+            import joblib
+
+            st.markdown('**Зберегти модель на комп\'ютер:**')
+            
+            # Текстове поле для назви файлу (не перемальовує весь додаток завдяки фрагменту)
+            model_file_base = st.text_input(
+                'Назва файлу моделі',
+                value=st.session_state.get('_model_filename_to_save', 'churn_model'),
+                label_visibility='collapsed',
+                placeholder='Назва моделі...'
+            )
+            st.session_state['_model_filename_to_save'] = model_file_base
+
+            # Формуємо правильне розширення
+            clean_name = model_file_base.strip()
+            filename = f"{clean_name}.pkl" if not clean_name.endswith('.pkl') else clean_name
+
+            # Запаковуємо модель у бінарний буфер в оперативній пам'яті
+            buffer = io.BytesIO()
+            joblib.dump(model_artifacts, buffer)
+            model_bytes = buffer.getvalue()
+
+            # Кнопка скачування віддає файл локально у браузер без повного ре-рану
+            st.download_button(
+                label='Скачати модель (.pkl)',
+                data=model_bytes,
+                file_name=filename,
+                mime='application/octet-stream',
+                use_container_width=True
+            )
+
+        # Викликаємо фрагмент і передаємо йому навчені артефакти моделі
+        render_download_model_block(state['churn_artifacts'])
 
     latest_customers = state['latest_customers']
     rfm = state['rfm']
@@ -2104,165 +2025,166 @@ def main():
 
         if feedback_file is not None:
             st.markdown('---')
-            st.markdown('### 📥 Зовнішній feedback кампаній')
+            st.markdown('### Зовнішній feedback кампаній')
             st.caption(
-                'Файл зі зворотнім зв’язком з CRM/пошти або іншої системи. '
-                'Очікується: customer_id + довільна колонка статусу '
-                '(напр., responded, converted, clicked, status тощо).'
+                'Файл зі зворотнім зв’язком з CRM/пошти або іншої системи...'
             )
-            try:
-                _fb_df = get_cached_dataframe(feedback_file.getvalue(), feedback_file.name)
-                # ── Auto-detect customer_id column by common aliases ─────────
-                _FB_CID_ALIASES = {
-                    'customer_id', 'customerid', 'customer id',
-                    'user_id', 'userid', 'user id',
-                    'client_id', 'clientid', 'client id',
-                    'cust_id', 'custid',
-                }
-                _fb_cid_col = None
-                for _col in _fb_df.columns:
-                    if _col.strip().lower() in _FB_CID_ALIASES:
-                        _fb_cid_col = _col
-                        break
-                if _fb_cid_col and _fb_cid_col != 'customer_id':
-                    _fb_df = _fb_df.rename(columns={_fb_cid_col: 'customer_id'})
-
-                _fb_n_rows = len(_fb_df)
-                _fb_n_cols = len(_fb_df.columns)
-
-                # ── Quick stats row ──────────────────────────────────────────
-                _fc1, _fc2, _fc3, _fc4 = st.columns(4)
-                with _fc1:
-                    st.metric('Рядків у feedback', f'{_fb_n_rows:,}')
-                with _fc2:
-                    st.metric('Колонок', _fb_n_cols)
-                with _fc3:
-                    _has_cid = 'customer_id' in _fb_df.columns
-                    _cid_label = (
-                        f'✅ є ({_fb_cid_col})' if (_has_cid and _fb_cid_col and _fb_cid_col != 'customer_id')
-                        else ('✅ є' if _has_cid else '❌ немає')
-                    )
-                    st.metric('customer_id', _cid_label)
-                with _fc4:
-                    if _has_cid:
-                        _match_n = _fb_df['customer_id'].astype(str).str.strip().isin(
-                            latest_customers['customer_id'].astype(str)
-                        ).sum()
-                        st.metric('Збіг з клієнтами', f'{_match_n:,}')
-                    else:
-                        st.metric('Збіг', '—')
-
-                # ── Column preview ───────────────────────────────────────────
-                with st.expander('🔍 Перегляд файлу feedback'):
-                    dark_table(_fb_df.head(50), hide_index=True, height=360)
-
-                if not _has_cid:
-                    st.warning(
-                        'У feedback-файлі не знайдено колонки з ID клієнта. '
-                        f'Знайдені колонки: {list(_fb_df.columns)}. '
-                        'Очікується одна з: customer_id, user_id, User ID тощо.'
-                    )
-                    dark_table(_fb_df.head(100), hide_index=True, height=420)
-                else:
-                    # Detect status/response column automatically
-                    _NON_STATUS_COLS = {
-                        'customer_id', 'customerid', 'id',
-                        'suggested item', 'suggested_item', 'item', 'product',
+            
+            @st.fragment
+            def render_feedback_analysis():
+                try:
+                    _fb_df = get_cached_dataframe(feedback_file.getvalue(), feedback_file.name)
+                    # ── Auto-detect customer_id column by common aliases ─────────
+                    _FB_CID_ALIASES = {
+                        'customer_id', 'customerid', 'customer id',
+                        'user_id', 'userid', 'user id',
+                        'client_id', 'clientid', 'client id',
+                        'cust_id', 'custid',
                     }
-                    _status_candidates = [
-                        c for c in _fb_df.columns
-                        if c.lower() not in _NON_STATUS_COLS
-                        and _fb_df[c].nunique() <= 20
-                    ]
+                    _fb_cid_col = None
+                    for _col in _fb_df.columns:
+                        if _col.strip().lower() in _FB_CID_ALIASES:
+                            _fb_cid_col = _col
+                            break
+                    if _fb_cid_col and _fb_cid_col != 'customer_id':
+                        _fb_df = _fb_df.rename(columns={_fb_cid_col: 'customer_id'})
 
-                    # Detect item/product column (e.g. "Suggested Item")
-                    _ITEM_ALIASES = {'suggested item', 'suggested_item', 'item', 'product', 'product_name', 'товар'}
-                    _fb_item_col = next(
-                        (c for c in _fb_df.columns if c.strip().lower() in _ITEM_ALIASES),
-                        None,
-                    )
+                    _fb_n_rows = len(_fb_df)
+                    _fb_n_cols = len(_fb_df.columns)
 
-                    _status_col = None
-                    if _status_candidates:
-                        _status_col = st.selectbox(
-                            'Колонка статусу / реакції',
-                            ['— не вибрано'] + _status_candidates,
-                            key='feedback_status_col',
+                    # ── Quick stats row ──────────────────────────────────────────
+                    _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+                    with _fc1:
+                        st.metric('Рядків у feedback', f'{_fb_n_rows:,}')
+                    with _fc2:
+                        st.metric('Колонок', _fb_n_cols)
+                    with _fc3:
+                        _has_cid = 'customer_id' in _fb_df.columns
+                        _cid_label = (
+                            f'є ({_fb_cid_col})' if (_has_cid and _fb_cid_col and _fb_cid_col != 'customer_id')
+                            else ('є' if _has_cid else 'немає')
                         )
-                        if _status_col == '— не вибрано':
-                            _status_col = None
+                        st.metric('customer_id', _cid_label)
+                    with _fc4:
+                        if _has_cid:
+                            _match_n = _fb_df['customer_id'].astype(str).str.strip().isin(
+                                latest_customers['customer_id'].astype(str)
+                            ).sum()
+                            st.metric('Збіг з клієнтами', f'{_match_n:,}')
+                        else:
+                            st.metric('Збіг', '—')
 
-                    # Merge feedback with predicted customers
-                    _fb_clean = _fb_df.copy()
-                    _fb_clean['customer_id'] = _fb_clean['customer_id'].astype(str).str.strip()
-                    _lc_copy = latest_customers[['customer_id', 'churn_probability_percent', 'risk_class',
-                                                  'rfm_segment', 'customer_cluster_name']].copy()
-                    _lc_copy['customer_id'] = _lc_copy['customer_id'].astype(str).str.strip()
-                    _merged = _fb_clean.merge(_lc_copy, on='customer_id', how='inner')
+                    # ── Column preview ───────────────────────────────────────────
+                    with st.expander('Перегляд файлу feedback'):
+                        dark_table(_fb_df.head(50), hide_index=True, height=360)
 
-                    if len(_merged) == 0:
-                        st.info(
-                            'Жодного перетину між feedback і предікціями. '
-                            f'ID з feedback (приклади): {_fb_clean["customer_id"].head(5).tolist()}. '
-                            f'ID в моделі (приклади): {_lc_copy["customer_id"].head(5).tolist()}.'
+                    if not _has_cid:
+                        st.warning(
+                            'У feedback-файлі не знайдено колонки з ID клієнта. '
+                            f'Знайдені колонки: {list(_fb_df.columns)}. '
+                            'Очікується одна з: customer_id, user_id, User ID тощо.'
                         )
+                        dark_table(_fb_df.head(100), hide_index=True, height=420)
                     else:
-                        st.markdown(f'**Перетин: {len(_merged):,} клієнтів**')
+                        # Detect status/response column automatically
+                        _NON_STATUS_COLS = {
+                            'customer_id', 'customerid', 'id',
+                            'suggested item', 'suggested_item', 'item', 'product',
+                        }
+                        _status_candidates = [
+                            c for c in _fb_df.columns
+                            if c.lower() not in _NON_STATUS_COLS
+                            and _fb_df[c].nunique() <= 20
+                        ]
 
-                        if _status_col:
-                            st.markdown('#### Розподіл реакцій за рівнем ризику')
-                            _pivot = (
-                                _merged
-                                .groupby(['risk_class', _status_col])
-                                .size()
-                                .reset_index(name='клієнтів')
+                        # Detect item/product column (e.g. "Suggested Item")
+                        _ITEM_ALIASES = {'suggested item', 'suggested_item', 'item', 'product', 'product_name', 'товар'}
+                        _fb_item_col = next(
+                            (c for c in _fb_df.columns if c.strip().lower() in _ITEM_ALIASES),
+                            None,
+                        )
+
+                        _status_col = None
+                        if _status_candidates:
+                            _status_col = st.selectbox(
+                                'Колонка статусу / реакції',
+                                ['— не вибрано'] + _status_candidates,
+                                key='feedback_status_col',
                             )
-                            dark_table(_pivot, hide_index=True, height=320)
+                            if _status_col == '— не вибрано':
+                                _status_col = None
 
-                            st.markdown('#### Сер. ризик відтоку за статусом')
-                            _avg_risk = (
-                                _merged
-                                .groupby(_status_col)['churn_probability_percent']
-                                .mean()
-                                .round(1)
-                                .reset_index()
+                        # Merge feedback with predicted customers
+                        _fb_clean = _fb_df.copy()
+                        _fb_clean['customer_id'] = _fb_clean['customer_id'].astype(str).str.strip()
+                        _lc_copy = latest_customers[['customer_id', 'churn_probability_percent', 'risk_class',
+                                                    'rfm_segment', 'customer_cluster_name']].copy()
+                        _lc_copy['customer_id'] = _lc_copy['customer_id'].astype(str).str.strip()
+                        _merged = _fb_clean.merge(_lc_copy, on='customer_id', how='inner')
+
+                        if len(_merged) == 0:
+                            st.info(
+                                'Жодного перетину між feedback і предікціями. '
+                                f'ID з feedback (приклади): {_fb_clean["customer_id"].head(5).tolist()}. '
+                                f'ID в моделі (приклади): {_lc_copy["customer_id"].head(5).tolist()}.'
                             )
-                            _avg_risk.columns = [_status_col, 'Сер. ризик, %']
-                            dark_table(_avg_risk, hide_index=True, height=320)
+                        else:
+                            st.markdown(f'**Перетин: {len(_merged):,} клієнтів**')
 
-                            # ── Item-level analysis (if Suggested Item present) ──
-                            if _fb_item_col and _fb_item_col in _merged.columns:
-                                st.markdown(f'#### Реакція за товаром (`{_fb_item_col}`)')
-                                _item_pivot = (
+                            if _status_col:
+                                st.markdown('#### Розподіл реакцій за рівнем ризику')
+                                _pivot = (
                                     _merged
-                                    .groupby([_fb_item_col, _status_col])
+                                    .groupby(['risk_class', _status_col])
                                     .size()
                                     .reset_index(name='клієнтів')
-                                    .sort_values('клієнтів', ascending=False)
                                 )
-                                dark_table(_item_pivot.head(50), hide_index=True, height=360)
+                                dark_table(_pivot, hide_index=True, height=320)
 
-                                _negative_reactions = {'not interested', 'no action', 'unsubscribed', 'ignored'}
-                                _positive = _merged[
-                                    ~_merged[_status_col].str.lower().isin(_negative_reactions)
-                                ]
-                                if len(_positive) > 0:
-                                    _top_items = (
-                                        _positive[_fb_item_col]
-                                        .value_counts()
-                                        .head(10)
-                                        .reset_index()
+                                st.markdown('#### Сер. ризик відтоку за статусом')
+                                _avg_risk = (
+                                    _merged
+                                    .groupby(_status_col)['churn_probability_percent']
+                                    .mean()
+                                    .round(1)
+                                    .reset_index()
+                                )
+                                _avg_risk.columns = [_status_col, 'Сер. ризик, %']
+                                dark_table(_avg_risk, hide_index=True, height=320)
+
+                                # ── Item-level analysis (if Suggested Item present) ──
+                                if _fb_item_col and _fb_item_col in _merged.columns:
+                                    st.markdown(f'#### Реакція за товаром (`{_fb_item_col}`)')
+                                    _item_pivot = (
+                                        _merged
+                                        .groupby([_fb_item_col, _status_col])
+                                        .size()
+                                        .reset_index(name='клієнтів')
+                                        .sort_values('клієнтів', ascending=False)
                                     )
-                                    _top_items.columns = ['Товар', 'Позитивних реакцій']
-                                    st.markdown('#### ТОП-10 товарів з позитивними реакціями')
-                                    dark_table(_top_items, hide_index=True, height=320)
+                                    dark_table(_item_pivot.head(50), hide_index=True, height=360)
 
-                        st.markdown('#### Об\u2019єднана таблиця (feedback + предікції)')
-                        dark_table(_merged.head(100), hide_index=True, height=420)
-                        download_dataframe_button(_merged, 'feedback_enriched.csv', 'Завантажити feedback + предікції')
+                                    _negative_reactions = {'not interested', 'no action', 'unsubscribed', 'ignored'}
+                                    _positive = _merged[
+                                        ~_merged[_status_col].str.lower().isin(_negative_reactions)
+                                    ]
+                                    if len(_positive) > 0:
+                                        _top_items = (
+                                            _positive[_fb_item_col]
+                                            .value_counts()
+                                            .head(10)
+                                            .reset_index()
+                                        )
+                                        _top_items.columns = ['Товар', 'Позитивних реакцій']
+                                        st.markdown('#### ТОП-10 товарів з позитивними реакціями')
+                                        dark_table(_top_items, hide_index=True, height=320)
 
-            except Exception as _fb_error:
-                st.error(f'Не вдалося зчитати feedback-файл: {_fb_error}')
+                            st.markdown('#### Об\u2019єднана таблиця (feedback + предікції)')
+                            dark_table(_merged.head(100), hide_index=True, height=420)
+                            download_dataframe_button(_merged, 'feedback_enriched.csv', 'Завантажити feedback + предікції')
+                except Exception as _fb_error:
+                    st.error(f'Не вдалося зчитати feedback-файл: {_fb_error}')
+            render_feedback_analysis()
 
         with st.expander('Нотатки автопідготовки'):
             if state['notes']:
@@ -2433,8 +2355,25 @@ def main():
 
         # Створюємо ізольований фрагмент. Усе, що всередині, оновлюватиметься окремо від усієї сторінки!
         @st.fragment
+        @st.fragment
         def render_campaign_tab():
-            st.markdown('### Налаштування кампанії')
+            st.markdown('Налаштування цільової аудиторії')
+            
+            # Розміщуємо три фільтри в один гарний ряд
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                available_rfm = sorted(latest_customers['rfm_segment'].dropna().unique().tolist()) if 'rfm_segment' in latest_customers.columns else []
+                selected_rfm = st.multiselect('RFM Сегменти', options=available_rfm, placeholder='Напр. VIP')
+                
+            with col2:
+                available_risk = sorted(latest_customers['risk_class'].dropna().unique().tolist()) if 'risk_class' in latest_customers.columns else []
+                selected_risk = st.multiselect('Клас ризику', options=available_risk, placeholder='Напр. High')
+                
+            with col3:
+                available_clusters = sorted(latest_customers['customer_cluster_name'].dropna().unique().tolist()) if 'customer_cluster_name' in latest_customers.columns else []
+                selected_clusters = st.multiselect('ML Кластери', options=available_clusters, placeholder='Оберіть...')
+
             audience_limit = st.slider('Скільки рядків показувати в таблиці', 10, 500, 100, 10)
             
             campaign_name = 'Retention campaign'
@@ -2454,25 +2393,31 @@ def main():
                 st.session_state['_campaign_signature'] = _campaign_signature
 
             _build_clicked = st.button(
-                '🚀 Побудувати кампанію',
+                'Побудувати кампанію',
                 type='primary',
-                help='Аналізує аудиторію, навчає feedback-модель (якщо файл завантажено) та формує таблицю.',
+                help='Аналізує аудиторію, навчає feedback-модель та формує таблицю.',
             )
             if _build_clicked:
                 st.session_state['_campaign_built'] = True
 
             if not st.session_state.get('_campaign_built', False):
-                st.info(
-                    'ℹ️ Натисніть **Побудувати кампанію**, щоб згенерувати таблицю. '
-                    + ('Виявлено feedback-файл — буде навчена модель реакції.' if feedback_file is not None
-                       else 'Без feedback-файлу буде використана евристика по ризику.')
-                )
-                # Тепер return безпечний! Він виходить лише з фрагмента, а не з усієї програми
+                st.info('ℹНалаштуйте фільтри та натисніть **Побудувати кампанію**.')
                 return  
 
-            # --- Далі йде логіка, яка виконується ПІСЛЯ натискання кнопки ---
+            # --- Логіка побудови кампанії ---
             audience = latest_customers.copy()
             
+            # Тільки жорстка логіка (класичний перетин AND)
+            if selected_rfm:
+                audience = audience[audience['rfm_segment'].isin(selected_rfm)]
+            if selected_risk:
+                audience = audience[audience['risk_class'].isin(selected_risk)]
+            if selected_clusters:
+                audience = audience[audience['customer_cluster_name'].isin(selected_clusters)]
+                
+            if len(audience) == 0:
+                st.warning('Аудиторія порожня. Жоден клієнт не підпадає під усі обрані фільтри одночасно.')
+                return
             fb_artifacts = None
             if feedback_file is not None:
                 try:
@@ -2500,7 +2445,7 @@ def main():
                         ):
                             fb_artifacts = _cached_feedback.get('artifacts')
                         else:
-                            with st.spinner('🔄 Навчання feedback-моделі реакції...'):
+                            with st.spinner('Навчання feedback-моделі реакції...'):
                                 X_fb, y_fb, groups_fb, fcols, ccols = prepare_feedback_training_set(
                                     feedback_df=_fb_raw,
                                     customer_features=latest_customers,
@@ -2517,7 +2462,7 @@ def main():
                                 }
 
                         st.success(
-                            f'✅ Feedback-модель навчена ({fb_artifacts.algorithm_name}). '
+                            f'Feedback-модель навчена ({fb_artifacts.algorithm_name}). '
                             f'ROC-AUC = {fb_artifacts.roc_auc:.4f}. '
                             f'Категорій у моделі: {len(fb_artifacts.known_categories)}.'
                         )
@@ -2545,7 +2490,7 @@ def main():
 
             st.markdown(f'### Розмір аудиторії: {len(final_campaign)}')
 
-            st.markdown('### 🎚 What-if сценарій')
+            st.markdown('### What-if сценарій')
             st.caption('Змоделюйте, як зміна поведінки клієнтів вплине на ймовірність відтоку.')
 
             def _slider_html(val: int, unit: str = '%') -> str:
@@ -2577,7 +2522,7 @@ def main():
             _sl1, _sl2, _sl3 = st.columns(3)
 
             with _sl1:
-                st.markdown('**📅 Частота покупок**')
+                st.markdown('**Частота покупок**')
                 freq_change_percent = st.slider(
                     'Частота, %',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_freq',
@@ -2585,7 +2530,7 @@ def main():
                 st.markdown(_slider_html(freq_change_percent), unsafe_allow_html=True)
 
             with _sl2:
-                st.markdown('**🛒 Середній чек**')
+                st.markdown('**Середній чек**')
                 ticket_change_percent = st.slider(
                     'Чек, %',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_ticket',
@@ -2593,7 +2538,7 @@ def main():
                 st.markdown(_slider_html(ticket_change_percent), unsafe_allow_html=True)
 
             with _sl3:
-                st.markdown('**🎁 Реакція на акції**')
+                st.markdown('**Реакція на акції**')
                 promo_change_percent = st.slider(
                     'Промо, п.п.',
                     min_value=-50, max_value=50, value=0, step=5, key='sl_promo',
@@ -2625,7 +2570,6 @@ def main():
                 st.markdown('### Фінальна таблиця кампанії')
                 dark_table(final_campaign.head(audience_limit), hide_index=True, height=None)
                 download_dataframe_button(final_campaign, 'campaign_final.csv', 'Завантажити фінальну кампанію')
-
         # Важливо: викликаємо наш фрагмент!
         render_campaign_tab()
 
