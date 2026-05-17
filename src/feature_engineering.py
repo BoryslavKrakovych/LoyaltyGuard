@@ -262,6 +262,50 @@ def prepare_transactions_dataframe(raw_df: pd.DataFrame) -> tuple[pd.DataFrame, 
     if 'price' in df.columns:
         df['price'] = _to_numeric(df['price'])
 
+    # ── Refund / cancellation net-out ────────────────────────────────────
+    # У retail-датасетах типу Online Retail II скасоване замовлення лишається
+    # в даних двома рядками: позитивна покупка + credit note (`C…`) з тією ж
+    # абсолютною кількістю. Якщо просто викинути credit notes, перша частина
+    # лишається фантомом — так, наприклад, клієнт 12346 виглядає на +£77k
+    # покупок, хоча його гігантський інвойс на 74,215 одиниць був повністю
+    # скасований і у реальності net = 0.
+    #
+    # Тому нетимо кількість на рівні (customer × product): пари, які в сумі
+    # ≤ 0, прибираємо повністю; решту credit-note рядків (часткові повернення)
+    # дропаємо окремо, як і будь-які залишкові негативні quantity.
+    nettable = (
+        'customer_id' in df.columns
+        and 'product_id' in df.columns
+        and 'quantity' in df.columns
+    )
+    if nettable:
+        net_qty = df.groupby(['customer_id', 'product_id'])['quantity'].transform('sum')
+        before = len(df)
+        df = df[net_qty > 0].copy()
+        removed = before - len(df)
+        if removed > 0:
+            notes.append(
+                f'видалено {removed} рядків повністю скасованих замовлень '
+                f'(нетинг credit notes проти первинної покупки)'
+            )
+
+    if 'transaction_id' in df.columns:
+        before = len(df)
+        is_credit_note = (
+            df['transaction_id'].astype(str).str.strip().str.upper().str.startswith('C')
+        )
+        df = df[~is_credit_note].copy()
+        removed = before - len(df)
+        if removed > 0:
+            notes.append(f'видалено {removed} рядків часткових credit notes')
+
+    if 'quantity' in df.columns:
+        before = len(df)
+        df = df[df['quantity'].fillna(1) > 0].copy()
+        removed = before - len(df)
+        if removed > 0:
+            notes.append(f'видалено {removed} рядків з негативною/нульовою кількістю')
+
     line_item_like = (
         'transaction_id' in df.columns and
         ('quantity' in df.columns or 'product_id' in df.columns or 'product_name' in df.columns)

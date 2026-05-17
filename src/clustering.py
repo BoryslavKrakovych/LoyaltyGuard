@@ -71,7 +71,17 @@ def _describe_clusters_by_rank(cluster_means: pd.DataFrame) -> dict[int, str]:
 
     active = pick_best(['online_purchases', 'total_transactions', 'basket_items'])
     if active is not None:
-        names[active] = 'Активні покупці'
+        # Захист від refund-heavy кластерів: висока кількість транзакцій ще не
+        # означає "активний покупець". Якщо середній чек кластера <= 0 або
+        # середній net total_sales <= 0 — не вішаємо ярлик 'Активні покупці',
+        # хай випадає в 'Клієнти зі стандартною поведінкою'.
+        ticket_col = next(
+            (c for c in ['avg_ticket_size', 'avg_purchase_value', 'total_sales']
+             if c in cluster_means.columns),
+            None,
+        )
+        if ticket_col is None or cluster_means.loc[active, ticket_col] > 0:
+            names[active] = 'Активні покупці'
 
     for cluster_id in available:
         if int(cluster_id) not in names:
