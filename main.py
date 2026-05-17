@@ -2033,169 +2033,6 @@ def main():
         dark_table(top_risk_active, hide_index=True, height=None)
         download_dataframe_button(top_risk_active, 'top_risk_active.csv', 'Завантажити TOP-10')
 
-        if feedback_file is not None:
-            st.markdown('---')
-            st.markdown('### Зовнішній feedback кампаній')
-            st.caption(
-                'Файл зі зворотнім зв’язком з CRM/пошти або іншої системи...'
-            )
-            
-            @st.fragment
-            def render_feedback_analysis():
-                try:
-                    _fb_df = get_cached_dataframe(feedback_file.getvalue(), feedback_file.name)
-                    # ── Auto-detect customer_id column by common aliases ─────────
-                    _FB_CID_ALIASES = {
-                        'customer_id', 'customerid', 'customer id',
-                        'user_id', 'userid', 'user id',
-                        'client_id', 'clientid', 'client id',
-                        'cust_id', 'custid',
-                    }
-                    _fb_cid_col = None
-                    for _col in _fb_df.columns:
-                        if _col.strip().lower() in _FB_CID_ALIASES:
-                            _fb_cid_col = _col
-                            break
-                    if _fb_cid_col and _fb_cid_col != 'customer_id':
-                        _fb_df = _fb_df.rename(columns={_fb_cid_col: 'customer_id'})
-
-                    _fb_n_rows = len(_fb_df)
-                    _fb_n_cols = len(_fb_df.columns)
-
-                    # ── Quick stats row ──────────────────────────────────────────
-                    _fc1, _fc2, _fc3, _fc4 = st.columns(4)
-                    with _fc1:
-                        st.metric('Рядків у feedback', f'{_fb_n_rows:,}')
-                    with _fc2:
-                        st.metric('Колонок', _fb_n_cols)
-                    with _fc3:
-                        _has_cid = 'customer_id' in _fb_df.columns
-                        _cid_label = (
-                            f'є ({_fb_cid_col})' if (_has_cid and _fb_cid_col and _fb_cid_col != 'customer_id')
-                            else ('є' if _has_cid else 'немає')
-                        )
-                        st.metric('customer_id', _cid_label)
-                    with _fc4:
-                        if _has_cid:
-                            _match_n = _fb_df['customer_id'].astype(str).str.strip().isin(
-                                latest_customers['customer_id'].astype(str)
-                            ).sum()
-                            st.metric('Збіг з клієнтами', f'{_match_n:,}')
-                        else:
-                            st.metric('Збіг', '—')
-
-                    # ── Column preview ───────────────────────────────────────────
-                    with st.expander('Перегляд файлу feedback'):
-                        dark_table(_fb_df.head(50), hide_index=True, height=360)
-
-                    if not _has_cid:
-                        st.warning(
-                            'У feedback-файлі не знайдено колонки з ID клієнта. '
-                            f'Знайдені колонки: {list(_fb_df.columns)}. '
-                            'Очікується одна з: customer_id, user_id, User ID тощо.'
-                        )
-                        dark_table(_fb_df.head(100), hide_index=True, height=420)
-                    else:
-                        # Detect status/response column automatically
-                        _NON_STATUS_COLS = {
-                            'customer_id', 'customerid', 'id',
-                            'suggested item', 'suggested_item', 'item', 'product',
-                        }
-                        _status_candidates = [
-                            c for c in _fb_df.columns
-                            if c.lower() not in _NON_STATUS_COLS
-                            and _fb_df[c].nunique() <= 20
-                        ]
-
-                        # Detect item/product column (e.g. "Suggested Item")
-                        _ITEM_ALIASES = {'suggested item', 'suggested_item', 'item', 'product', 'product_name', 'товар'}
-                        _fb_item_col = next(
-                            (c for c in _fb_df.columns if c.strip().lower() in _ITEM_ALIASES),
-                            None,
-                        )
-
-                        _status_col = None
-                        if _status_candidates:
-                            _status_col = st.selectbox(
-                                'Колонка статусу / реакції',
-                                ['— не вибрано'] + _status_candidates,
-                                key='feedback_status_col',
-                            )
-                            if _status_col == '— не вибрано':
-                                _status_col = None
-
-                        # Merge feedback with predicted customers
-                        _fb_clean = _fb_df.copy()
-                        _fb_clean['customer_id'] = _fb_clean['customer_id'].astype(str).str.strip()
-                        _lc_copy = latest_customers[['customer_id', 'churn_probability_percent', 'risk_class',
-                                                    'rfm_segment', 'customer_cluster_name']].copy()
-                        _lc_copy['customer_id'] = _lc_copy['customer_id'].astype(str).str.strip()
-                        _merged = _fb_clean.merge(_lc_copy, on='customer_id', how='inner')
-
-                        if len(_merged) == 0:
-                            st.info(
-                                'Жодного перетину між feedback і предікціями. '
-                                f'ID з feedback (приклади): {_fb_clean["customer_id"].head(5).tolist()}. '
-                                f'ID в моделі (приклади): {_lc_copy["customer_id"].head(5).tolist()}.'
-                            )
-                        else:
-                            st.markdown(f'**Перетин: {len(_merged):,} клієнтів**')
-
-                            if _status_col:
-                                st.markdown('#### Розподіл реакцій за рівнем ризику')
-                                _pivot = (
-                                    _merged
-                                    .groupby(['risk_class', _status_col])
-                                    .size()
-                                    .reset_index(name='клієнтів')
-                                )
-                                dark_table(_pivot, hide_index=True, height=320)
-
-                                st.markdown('#### Сер. ризик відтоку за статусом')
-                                _avg_risk = (
-                                    _merged
-                                    .groupby(_status_col)['churn_probability_percent']
-                                    .mean()
-                                    .round(1)
-                                    .reset_index()
-                                )
-                                _avg_risk.columns = [_status_col, 'Сер. ризик, %']
-                                dark_table(_avg_risk, hide_index=True, height=320)
-
-                                # ── Item-level analysis (if Suggested Item present) ──
-                                if _fb_item_col and _fb_item_col in _merged.columns:
-                                    st.markdown(f'#### Реакція за товаром (`{_fb_item_col}`)')
-                                    _item_pivot = (
-                                        _merged
-                                        .groupby([_fb_item_col, _status_col])
-                                        .size()
-                                        .reset_index(name='клієнтів')
-                                        .sort_values('клієнтів', ascending=False)
-                                    )
-                                    dark_table(_item_pivot.head(50), hide_index=True, height=360)
-
-                                    _negative_reactions = {'not interested', 'no action', 'unsubscribed', 'ignored'}
-                                    _positive = _merged[
-                                        ~_merged[_status_col].str.lower().isin(_negative_reactions)
-                                    ]
-                                    if len(_positive) > 0:
-                                        _top_items = (
-                                            _positive[_fb_item_col]
-                                            .value_counts()
-                                            .head(10)
-                                            .reset_index()
-                                        )
-                                        _top_items.columns = ['Товар', 'Позитивних реакцій']
-                                        st.markdown('#### ТОП-10 товарів з позитивними реакціями')
-                                        dark_table(_top_items, hide_index=True, height=320)
-
-                            st.markdown('#### Об\u2019єднана таблиця (feedback + предікції)')
-                            dark_table(_merged.head(100), hide_index=True, height=420)
-                            download_dataframe_button(_merged, 'feedback_enriched.csv', 'Завантажити feedback + предікції')
-                except Exception as _fb_error:
-                    st.error(f'Не вдалося зчитати feedback-файл: {_fb_error}')
-            render_feedback_analysis()
-
         with st.expander('Нотатки автопідготовки'):
             if state['notes']:
                 for note in state['notes']:
@@ -2439,54 +2276,83 @@ def main():
                     if cid_col and item_col and reaction_col:
                         _fb_raw[cid_col] = _fb_raw[cid_col].astype(str).str.strip()
 
-                        _feedback_cache_key = (
-                            feedback_file.name,
-                            len(feedback_file.getvalue()),
-                            tuple(_fb_raw.columns),
-                            len(_fb_raw),
-                            len(latest_customers),
-                        )
-                        _cached_feedback = st.session_state.get('_feedback_response_cache')
+                        # 1. Шукаємо негативні реакції
+                        # Можеш додати сюди будь-які слова, які CRM віддає як відмову
+                        negative_words = ['не цікаво', 'not interested', 'no action', 'ignored', 'ні', 'відмова']
+                        
+                        def is_negative(val):
+                            s = str(val).lower()
+                            return any(w in s for w in negative_words)
+                            
+                        neg_fb = _fb_raw[_fb_raw[reaction_col].apply(is_negative)].copy()
 
-                        if (
-                            _cached_feedback is not None
-                            and _cached_feedback.get('key') == _feedback_cache_key
-                        ):
-                            fb_artifacts = _cached_feedback.get('artifacts')
-                        else:
-                            with st.spinner('Навчання feedback-моделі реакції...'):
-                                X_fb, y_fb, groups_fb, fcols, ccols = prepare_feedback_training_set(
-                                    feedback_df=_fb_raw,
-                                    customer_features=latest_customers,
-                                    categorizer=lambda t: categorize_product(t)[0],
-                                    cid_col=cid_col,
-                                    item_col=item_col,
-                                    reaction_col=reaction_col,
-                                )
-                                fb_service = FeedbackResponseService(use_xgboost=True)
-                                fb_artifacts = fb_service.train(X_fb, y_fb, groups_fb, fcols, ccols)
-                                st.session_state['_feedback_response_cache'] = {
-                                    'key': _feedback_cache_key,
-                                    'artifacts': fb_artifacts,
-                                }
+                        # 2. Визначаємо категорію відхиленого товару (використовуємо твою ж функцію)
+                        neg_fb['rejected_cat'] = neg_fb[item_col].astype(str).apply(lambda x: categorize_product(x)[0])
 
-                        st.success(
-                            f'Feedback-модель навчена ({fb_artifacts.algorithm_name}). '
-                            f'ROC-AUC = {fb_artifacts.roc_auc:.4f}. '
-                            f'Категорій у моделі: {len(fb_artifacts.known_categories)}.'
+                        # 3. Робимо словник: customer_id -> множина відхилених категорій
+                        rejected_map = neg_fb.groupby(cid_col)['rejected_cat'].apply(set).to_dict()
+
+                        # 4. Функція для пошуку першої "безпечної" категорії
+                        def get_best_available_category(row):
+                            cid = str(row['customer_id']).strip()
+                            rejected = rejected_map.get(cid, set())
+
+                            # Беремо топ категорії клієнта
+                            candidates = split_categories(row.get('top_categories_display', ''))
+                            if not candidates:
+                                candidates = [row.get('dominant_category_display', CATEGORY_OTHER_LABEL)]
+
+                            if not rejected:
+                                return candidates[0] if candidates else CATEGORY_OTHER_LABEL, False
+
+                            # Шукаємо першу, якої НЕМАЄ у списку відхилених
+                            for cat in candidates:
+                                if cat not in rejected and cat != CATEGORY_OTHER_LABEL:
+                                    return cat, False
+
+                            # Якщо всі варіанти відхилені
+                            return None, True
+
+                        # Застосовуємо логіку до аудиторії
+                        results = audience.apply(get_best_available_category, axis=1)
+                        audience['campaign_category'] = [res[0] if res[0] else '' for res in results]
+                        audience['needs_special_discount'] = [res[1] for res in results]
+
+                        # Звичайна побудова кампанії (система візьме оновлену campaign_category)
+                        final_campaign = build_campaign_table(
+                            audience=audience,
+                            campaign_name=campaign_name,
+                            offer_type=offer_type,
+                            channel_mode=channel_mode,
+                            category_mode=category_mode,
+                            manual_category=manual_category,
                         )
+
+                        # 5. Жорстко перезаписуємо пропозицію для тих, у кого закінчились категорії
+                        special_cids = audience[audience['needs_special_discount']]['customer_id'].tolist()
+                        
+                        # Оновлюємо фінальну таблицю
+                        mask = final_campaign['customer_id'].isin(special_cids)
+                        final_campaign.loc[mask, 'recommended_action'] = 'Знижка "Особлива"'
+                        final_campaign.loc[mask, 'campaign_category'] = 'Всі категорії відхилені'
+
+                        st.success(f'✅ Фідбек застосовано. Знайдено {len(special_cids)} клієнтів, яким запропоновано Знижку "Особлива".')
+
                     else:
-                        st.warning(
-                            f'Feedback файл не містить усіх потрібних колонок. '
-                            f'Знайдено: {detected}. Очікується customer_id + item + reaction.'
+                        st.warning('Не знайдено колонок customer_id, item або reaction у файлі фідбеку.')
+                        # Fallback: звичайна кампанія
+                        final_campaign = build_campaign_table(
+                            audience=audience, campaign_name=campaign_name,
+                            offer_type=offer_type, channel_mode=channel_mode,
+                            category_mode=category_mode, manual_category=manual_category
                         )
                 except Exception as _err:
-                    st.error(f'Помилка тренування feedback-моделі: {_err}')
-
-            if fb_artifacts is not None and len(audience) > 0:
-                audience = attach_feedback_recommendations(audience, fb_artifacts)
-                audience['campaign_category'] = audience['best_category']
-                final_campaign = build_feedback_campaign_table(audience, campaign_name)
+                    st.error(f'Помилка обробки фідбеку: {_err}')
+                    final_campaign = build_campaign_table(
+                        audience=audience, campaign_name=campaign_name,
+                        offer_type=offer_type, channel_mode=channel_mode,
+                        category_mode=category_mode, manual_category=manual_category
+                    )
             else:
                 final_campaign = build_campaign_table(
                     audience=audience,
