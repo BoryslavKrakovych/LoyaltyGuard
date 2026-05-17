@@ -754,6 +754,7 @@ def build_app_state(
     source_name: str,
     manual_mapping: dict[str, str] | None = None,
     _saved_churn_artifacts=None,
+    horizon_days: int = 90,
 ):
     df, mapping, notes = load_and_prepare_transactions_from_dataframe(
         raw_df,
@@ -777,7 +778,6 @@ def build_app_state(
     semantic_summary = semantic_cluster_summary(product_clusters)
 
     featured = add_base_features(df)
-    horizon_days = 90
 
     if _saved_churn_artifacts is None:
         train_featured = build_forward_churn_dataset(featured, horizon_days=horizon_days)
@@ -999,8 +999,8 @@ def render_wordcloud_block(products: pd.DataFrame, featured: pd.DataFrame) -> No
         wordcloud = WordCloud(
             width=1100,
             height=480,
-            background_color='#0b0d14' if st.session_state.get('dark_mode', False) else '#ffffff',
-            colormap='cool' if st.session_state.get('dark_mode', False) else 'Blues',
+            background_color='#0b0d14',
+            colormap='Blues',
             max_words=160,
             random_state=42,
             collocations=False,
@@ -1781,7 +1781,14 @@ def main():
             label_visibility='collapsed',
             key='model_uploader'
         )
-
+        horizon_days = st.slider(
+            'Горизонт прогнозування (днів)',
+            min_value=7,      # мінімальний термін (наприклад, тиждень)
+            max_value=180,    # максимальний термін (півроку)
+            value=90,         # значення за замовчуванням
+            step=1,           # крок зміни (тиждень)
+            help='Кількість днів у майбутньому, за які аналізується відтік клієнтів.'
+        )
     saved_churn_artifacts = None
 
     if uploaded_model is not None:
@@ -1818,9 +1825,11 @@ def main():
             + _data_hash
             + _mapping_hash
             + _saved_model_hash
+            + f"_horizon_{horizon_days}"
         ).encode('utf-8')
     ).hexdigest()
 
+    # ── Єдина логіка запуску (навчання або завантаження) ──
     # ── Єдина логіка запуску (навчання або завантаження) ──
     if st.session_state.get('_model_signature') != _cache_key:
         st.session_state['_model_built'] = False
@@ -1830,6 +1839,7 @@ def main():
     
     if _cached is not None and _cached.get('key') == _cache_key:
         state = _cached['state']
+        st.session_state['_model_built'] = True
     else:
         # Визначаємо тексти залежно від режиму
         if saved_churn_artifacts is not None:
@@ -1841,30 +1851,30 @@ def main():
             btn_text = '🚀 Розпочати навчання моделі'
             spinner_text = '🔄 Навчання моделі та розрахунок метрик (це може зайняти деякий час)...'
 
-        _build_model_clicked = st.button(btn_text, type='primary', use_container_width=True)
-        
-        if _build_model_clicked:
-            st.session_state['_model_built'] = True
-
         if not st.session_state.get('_model_built', False):
             st.info(prompt_msg)
-            st.stop()
+            if st.button(btn_text, type='primary', use_container_width=True):
+                st.session_state['_model_built'] = True
+            else:
+                st.stop() # Зупиняємо виконання, поки користувач не натисне кнопку
             
-        try:
-            with st.spinner(spinner_text):
-                new_state = build_app_state(
-                    raw_df=raw_df,
-                    source_name=source_name,
-                    manual_mapping=manual_mapping,
-                    _saved_churn_artifacts=saved_churn_artifacts,
-                )
-            st.session_state['_app_state_cache'] = {'key': _cache_key, 'state': new_state}
-            st.rerun()
-        except Exception as error:
-            st.error(str(error))
-            # Якщо сталася помилка, скидаємо статус, щоб користувач міг спробувати знову
-            st.session_state['_model_built'] = False
-            st.stop()
+        # Якщо кнопка натиснута, крутимо спінер і рахуємо
+        if st.session_state.get('_model_built', False):
+            try:
+                with st.spinner(spinner_text):
+                    state = build_app_state(
+                        raw_df=raw_df,
+                        source_name=source_name,
+                        manual_mapping=manual_mapping,
+                        _saved_churn_artifacts=saved_churn_artifacts,
+                        horizon_days=horizon_days,
+                    )
+                st.session_state['_app_state_cache'] = {'key': _cache_key, 'state': state}
+                # st.rerun() ПРИБРАНО! Код просто йде вниз і малює вкладки.
+            except Exception as error:
+                st.error(str(error))
+                st.session_state['_model_built'] = False
+                st.stop()
 
     with st.sidebar:
         # ── Ізольований блок збереження файлу моделі (.pkl) на комп'ютер ──
@@ -2354,7 +2364,6 @@ def main():
         st.markdown('### Конструктор кампаній')
 
         # Створюємо ізольований фрагмент. Усе, що всередині, оновлюватиметься окремо від усієї сторінки!
-        @st.fragment
         @st.fragment
         def render_campaign_tab():
             st.markdown('Налаштування цільової аудиторії')
