@@ -1,22 +1,22 @@
 """
 Customer clustering with BEHAVIOR-BASED names instead of hard-coded labels.
 
-Cluster names are derived from the cluster centroid's rank on three axes:
-  - Frequency      (online_purchases / basket_items)
-  - Ticket size    (avg_ticket_size / total_sales)
-  - Promo response (promo_response_rate)
+Pipeline:
+  1) З latest-знімка клієнтів відокремлюємо net-refund аномалії
+     (total_sales <= 0 або avg_ticket_size <= 0). Вони не йдуть у KMeans
+     взагалі — отримують спеціальний кластер ANOMALY_CLUSTER_ID (-1)
+     з ім'ям ANOMALY_CLUSTER_NAME. Це усуває проблему, коли 2-3 клієнти
+     з негативним чеком утворювали власний мікрокластер #N з ярликом
+     'Клієнти зі стандартною поведінкою' і потрапляли в retention-кампанію
+     як 'Базова підтримка лояльності', хоча насправді вони системно
+     повертають товар.
+  2) Нормальних клієнтів кластеризуємо KMeans (StandardScaler + k=5).
+  3) Імена кластерів видаються евристикою _describe_clusters_by_rank
+     на основі агрегатів по фічах (churn, ticket, sales, активність).
+  4) Дублі імен отримують суфікс #N через _ensure_unique_names.
 
-For K=4 clusters this gives unambiguous names like:
-  'Часті покупки / великий чек'
-  'Часті покупки / малий чек'
-  'Рідкі покупки / великий чек'
-  'Рідкі покупки / малий чек'
-plus an optional '/ реагує на промо' descriptor if relevant.
-
-If two clusters land on the same label (rare, only with K >= 5), a '#N'
-suffix is appended.
-
-Also exposes cluster_strategy_text(name) → (title, description) for the UI.
+Також експортується cluster_strategy_text(name) → (title, description)
+для UI — включно з окремою гілкою для аномального кластера.
 """
 from __future__ import annotations
 
@@ -27,6 +27,11 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 from src.config import RANDOM_STATE
+
+
+# ── Константи для аномального кластера ────────────────────────────────────
+ANOMALY_CLUSTER_ID = -1
+ANOMALY_CLUSTER_NAME = 'Net-refund клієнти (виключити з кампанії)'
 
 
 def _pick_column(cluster_means: pd.DataFrame, candidates: list[str]) -> Optional[str]:
@@ -71,10 +76,10 @@ def _describe_clusters_by_rank(cluster_means: pd.DataFrame) -> dict[int, str]:
 
     active = pick_best(['online_purchases', 'total_transactions', 'basket_items'])
     if active is not None:
-        # Захист від refund-heavy кластерів: висока кількість транзакцій ще не
-        # означає "активний покупець". Якщо середній чек кластера <= 0 або
-        # середній net total_sales <= 0 — не вішаємо ярлик 'Активні покупці',
-        # хай випадає в 'Клієнти зі стандартною поведінкою'.
+        # Подвійний запобіжник: після pre-filter аномалій сюди вже не мали б
+        # доходити негативні чеки, але про всяк випадок лишаємо перевірку —
+        # якщо середній чек кластера все одно <= 0, ярлик 'Активні покупці'
+        # не вішаємо, хай випадає в 'Клієнти зі стандартною поведінкою'.
         ticket_col = next(
             (c for c in ['avg_ticket_size', 'avg_purchase_value', 'total_sales']
              if c in cluster_means.columns),
@@ -107,6 +112,38 @@ def _ensure_unique_names(names: dict[int, str]) -> dict[int, str]:
     return result
 
 
+def _split_anomalous(model_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Відокремлюємо net-refund клієнтів від нормальних.
+
+    Net-refund клієнт — той, у кого по агрегатах за весь період:
+      - total_sales <= 0      (повернень більше, ніж покупок у грошах), або
+      - avg_ticket_size <= 0  (середній чек від'ємний)
+
+    Для retention такі клієнти безглузді: їм нема чого «утримувати», вони
+    системно повертають товар. До того ж KMeans на них реагує болісно —
+    кілька таких клієнтів утворюють власний мікрокластер у далекому кутку
+    простору ознак і з'їдають один із k слотів сегментації.
+
+    Повертає (normal, anomalous) у вигляді двох незалежних DataFrame.
+    """
+    if model_data.empty:
+        return model_data.copy(), model_data.iloc[0:0].copy()
+
+    mask = pd.Series(False, index=model_data.index)
+    if 'total_sales' in model_data.columns:
+        mask |= pd.to_numeric(model_data['total_sales'], errors='coerce').fillna(0) <= 0
+    if 'avg_ticket_size' in model_data.columns:
+        mask |= pd.to_numeric(model_data['avg_ticket_size'], errors='coerce').fillna(0) <= 0
+
+    anomalous = model_data[mask].copy()
+    normal = model_data[~mask].copy()
+    return normal, anomalous
+
+
+def _empty_result() -> pd.DataFrame:
+    return pd.DataFrame(columns=['customer_id', 'customer_cluster', 'customer_cluster_name'])
+
+
 def build_customer_clusters(df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFrame:
     work = df.copy()
 
@@ -119,7 +156,7 @@ def build_customer_clusters(df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFra
     feature_cols = [col for col in candidate_cols if col in work.columns]
 
     if 'customer_id' not in work.columns or len(feature_cols) < 2:
-        return pd.DataFrame(columns=['customer_id', 'customer_cluster', 'customer_cluster_name'])
+        return _empty_result()
 
     if 'transaction_date' in work.columns:
         latest = (
@@ -132,14 +169,27 @@ def build_customer_clusters(df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFra
     model_data = latest[['customer_id'] + feature_cols].copy()
     model_data[feature_cols] = model_data[feature_cols].fillna(model_data[feature_cols].median())
 
+    # ── Виокремлюємо net-refund аномалії ДО KMeans ──
+    normal, anomalous = _split_anomalous(model_data)
+
+    # Якщо після фільтрації нормальних клієнтів недостатньо для кластеризації —
+    # повертаємо тільки аномальних (якщо вони є), щоб UI міг чесно показати,
+    # що звичайних сегментів просто немає.
+    if len(normal) < 2:
+        if anomalous.empty:
+            return _empty_result()
+        anomalous['customer_cluster'] = ANOMALY_CLUSTER_ID
+        anomalous['customer_cluster_name'] = ANOMALY_CLUSTER_NAME
+        return anomalous[['customer_id', 'customer_cluster', 'customer_cluster_name']]
+
     scaler = StandardScaler()
-    X = scaler.fit_transform(model_data[feature_cols])
+    X = scaler.fit_transform(normal[feature_cols])
 
-    n_clusters = max(2, min(n_clusters, len(model_data)))
+    n_clusters = max(2, min(n_clusters, len(normal)))
     kmeans = KMeans(n_clusters=n_clusters, random_state=RANDOM_STATE, n_init=10)
-    model_data['customer_cluster'] = kmeans.fit_predict(X)
+    normal['customer_cluster'] = kmeans.fit_predict(X)
 
-    cluster_means = model_data.groupby('customer_cluster')[feature_cols].mean()
+    cluster_means = normal.groupby('customer_cluster')[feature_cols].mean()
 
     score_cols = [c for c in ['total_sales', 'avg_ticket_size', 'basket_items', 'online_purchases']
                   if c in cluster_means.columns]
@@ -153,14 +203,27 @@ def build_customer_clusters(df: pd.DataFrame, n_clusters: int = 5) -> pd.DataFra
     raw_names = _describe_clusters_by_rank(cluster_means)
     unique_names = _ensure_unique_names(raw_names)
 
-    model_data['customer_cluster_name'] = model_data['customer_cluster'].map(unique_names)
-    return model_data[['customer_id', 'customer_cluster', 'customer_cluster_name']]
+    normal['customer_cluster_name'] = normal['customer_cluster'].map(unique_names)
+
+    parts = [normal[['customer_id', 'customer_cluster', 'customer_cluster_name']]]
+
+    if not anomalous.empty:
+        anomalous['customer_cluster'] = ANOMALY_CLUSTER_ID
+        anomalous['customer_cluster_name'] = ANOMALY_CLUSTER_NAME
+        parts.append(anomalous[['customer_id', 'customer_cluster', 'customer_cluster_name']])
+
+    return pd.concat(parts, ignore_index=True)
 
 
 def cluster_strategy_text(cluster_name: str) -> tuple[str, str]:
     """Map presentation cluster name → (strategy title, description)."""
     lower = str(cluster_name).lower()
 
+    if 'net-refund' in lower or 'виключити з кампанії' in lower:
+        return ('⚠️ Виключити з retention-кампанії',
+                'Клієнти з негативним нетто-оборотом за весь період — повернули більше, ніж купили. '
+                'У retention-кампанії не беруть участь: окрема перевірка на потенційний фрод, '
+                'системні проблеми з товаром або помилки в даних.')
     if 'високим ризиком' in lower:
         return ('🚨 Пріоритетне утримання',
                 'Основна аудиторія для retention: персональна знижка та швидка комунікація. '
